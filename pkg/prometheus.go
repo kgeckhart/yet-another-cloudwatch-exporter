@@ -41,6 +41,23 @@ var (
 		Name: "yace_cloudwatch_ec2api_requests_total",
 		Help: "Help is not implemented yet.",
 	})
+
+	replacer = strings.NewReplacer(
+		" ", "_",
+		",", "_",
+		"\t", "_",
+		"/", "_",
+		"\\", "_",
+		".", "_",
+		"-", "_",
+		":", "_",
+		"=", "_",
+		"“", "_",
+		"@", "_",
+		"<", "_",
+		">", "_",
+		"%", "_percent",
+	)
 )
 
 type PrometheusMetric struct {
@@ -137,22 +154,6 @@ func promStringTag(text string, labelsSnakeCase bool) string {
 }
 
 func sanitize(text string) string {
-	replacer := strings.NewReplacer(
-		" ", "_",
-		",", "_",
-		"\t", "_",
-		"/", "_",
-		"\\", "_",
-		".", "_",
-		"-", "_",
-		":", "_",
-		"=", "_",
-		"“", "_",
-		"@", "_",
-		"<", "_",
-		">", "_",
-		"%", "_percent",
-	)
 	return replacer.Replace(text)
 }
 
