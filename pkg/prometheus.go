@@ -1,10 +1,10 @@
 package exporter
 
 import (
-	"regexp"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -157,6 +157,16 @@ func sanitize(text string) string {
 }
 
 func splitString(text string) string {
-	splitRegexp := regexp.MustCompile(`([a-z0-9])([A-Z])`)
-	return splitRegexp.ReplaceAllString(text, `$1.$2`)
+	var sb strings.Builder
+
+	var previous rune = 'A'
+	for _, r := range text {
+		if unicode.IsUpper(r) && (unicode.IsNumber(previous) || unicode.IsLower(previous)) {
+			sb.WriteRune('_')
+		}
+		sb.WriteRune(r)
+		previous = r
+	}
+
+	return sb.String()
 }
