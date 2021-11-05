@@ -45,8 +45,6 @@ type cloudwatchData struct {
 	Period                  int64
 }
 
-var labelMap = make(map[string][]string)
-
 func createStsSession(role Role) *sts.STS {
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
@@ -387,28 +385,20 @@ func createPrometheusLabels(cwd *cloudwatchData, labelsSnakeCase bool) map[strin
 	return labels
 }
 
-func recordLabelsForMetric(metricName string, promLabels map[string]string) {
-	var workingLabelsCopy []string
-	if _, ok := labelMap[metricName]; ok {
-		workingLabelsCopy = append(workingLabelsCopy, labelMap[metricName]...)
-	}
-
-	for k := range promLabels {
-		workingLabelsCopy = append(workingLabelsCopy, k)
-	}
-	sort.Strings(workingLabelsCopy)
-	j := 0
-	for i := 1; i < len(workingLabelsCopy); i++ {
-		if workingLabelsCopy[j] == workingLabelsCopy[i] {
-			continue
-		}
-		j++
-		workingLabelsCopy[j] = workingLabelsCopy[i]
-	}
-	labelMap[metricName] = workingLabelsCopy[:j+1]
-}
-
 func ensureLabelConsistencyForMetrics(metrics []*PrometheusMetric) []*PrometheusMetric {
+	labelSetForMetric := make(map[string]map[string]bool, len(metrics))
+	for _, metric := range metrics {
+		if _, ok := labelSetForMetric[*metric.name]; !ok {
+			labelSetForMetric[*metric.name] = make(map[string]bool)
+		}
+
+		for label := range metric.labels {
+			if _, ok := labelSetForMetric[*metric.name][label]; !ok {
+				labelSetForMetric[*metric.name][label] = true
+			}
+		}
+	}
+
 	var updatedMetrics []*PrometheusMetric
 
 	for _, prometheusMetric := range metrics {
@@ -417,7 +407,7 @@ func ensureLabelConsistencyForMetrics(metrics []*PrometheusMetric) []*Prometheus
 
 		consistentMetricLabels := make(map[string]string)
 
-		for _, recordedLabel := range labelMap[*metricName] {
+		for recordedLabel := range labelSetForMetric[*metricName] {
 			if value, ok := metricLabels[recordedLabel]; ok {
 				consistentMetricLabels[recordedLabel] = value
 			} else {
@@ -520,7 +510,6 @@ func migrateCloudwatchToPrometheus(cwd []*cloudwatchData, labelsSnakeCase bool) 
 			if exportedDatapoint != nil {
 
 				promLabels := createPrometheusLabels(c, labelsSnakeCase)
-				recordLabelsForMetric(name, promLabels)
 				p := PrometheusMetric{
 					name:             &name,
 					labels:           promLabels,
