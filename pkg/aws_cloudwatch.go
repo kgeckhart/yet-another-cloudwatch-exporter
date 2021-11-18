@@ -298,8 +298,8 @@ func getFullMetricsList(namespace string, metric *Metric, clientCloudwatch cloud
 	return &res, nil
 }
 
-func getFilteredMetricDatas(region string, accountId *string, namespace string, customTags []Tag, tagsOnMetrics exportedTagsOnMetrics, dimensionRegexps []*string, resources []*tagsData, metricsList []*cloudwatch.Metric, m *Metric) (getMetricsData []cloudwatchData) {
-	type filterValues map[string]*tagsData
+func getFilteredMetricDatas(region string, accountId *string, namespace string, customTags []Tag, tagsOnMetrics exportedTagsOnMetrics, dimensionRegexps []*string, resources []*resource, metricsList []*cloudwatch.Metric, m *Metric) (getMetricsData []cloudwatchData) {
+	type filterValues map[string]*resource
 	dimensionsFilter := make(map[string]filterValues)
 	for _, dr := range dimensionRegexps {
 		dimensionRegexp := regexp.MustCompile(*dr)
@@ -325,7 +325,7 @@ func getFilteredMetricDatas(region string, accountId *string, namespace string, 
 	}
 	for _, cwMetric := range metricsList {
 		skip := false
-		r := &tagsData{
+		r := &resource{
 			ID:        aws.String("global"),
 			Namespace: &namespace,
 		}
@@ -386,10 +386,11 @@ func createPrometheusLabels(cwd *cloudwatchData, labelsSnakeCase bool) map[strin
 }
 
 func ensureLabelConsistencyForMetrics(metrics []*PrometheusMetric) []*PrometheusMetric {
-	labelSetForMetric := make(map[string]map[string]bool, len(metrics))
+	type metricLabels map[string]bool
+	labelSetForMetric := make(map[string]metricLabels, 0)
 	for _, metric := range metrics {
 		if _, ok := labelSetForMetric[*metric.name]; !ok {
-			labelSetForMetric[*metric.name] = make(map[string]bool)
+			labelSetForMetric[*metric.name] = make(metricLabels)
 		}
 
 		for label := range metric.labels {

@@ -19,7 +19,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type tagsData struct {
+type resource struct {
 	ID        *string
 	Tags      []*Tag
 	Namespace *string
@@ -95,7 +95,7 @@ func createAPIGatewaySession(region *string, role Role, fips bool) apigatewayifa
 	return apigateway.New(createSession(role, config), config)
 }
 
-func (iface tagsInterface) get(job *Job, region string) (resources []*tagsData, err error) {
+func (iface tagsInterface) get(job *Job, region string) (resources []*resource, err error) {
 	svc := SupportedServices.GetService(job.Type)
 	if len(svc.ResourceFilters) > 0 {
 		var inputparams = r.GetResourcesInput{
@@ -114,7 +114,7 @@ func (iface tagsInterface) get(job *Job, region string) (resources []*tagsData, 
 			}
 
 			for _, resourceTagMapping := range page.ResourceTagMappingList {
-				resource := tagsData{
+				resource := resource{
 					ID:        resourceTagMapping.ResourceARN,
 					Namespace: &job.Type,
 					Region:    &region,
@@ -149,12 +149,11 @@ func (iface tagsInterface) get(job *Job, region string) (resources []*tagsData, 
 	return resources, err
 }
 
-func migrateTagsToPrometheus(tagData []*tagsData, labelsSnakeCase bool) []*PrometheusMetric {
+func generateAWSInfoMetrics(resources []*resource, labelsSnakeCase bool) []*PrometheusMetric {
 	output := make([]*PrometheusMetric, 0)
-
 	tagList := make(map[string][]string)
 
-	for _, d := range tagData {
+	for _, d := range resources {
 		for _, entry := range d.Tags {
 			if !stringInSlice(entry.Key, tagList[*d.Namespace]) {
 				tagList[*d.Namespace] = append(tagList[*d.Namespace], entry.Key)
@@ -162,7 +161,7 @@ func migrateTagsToPrometheus(tagData []*tagsData, labelsSnakeCase bool) []*Prome
 		}
 	}
 
-	for _, d := range tagData {
+	for _, d := range resources {
 		promNs := strings.ToLower(*d.Namespace)
 		if !strings.HasPrefix(promNs, "aws") {
 			promNs = "aws_" + promNs

@@ -9,11 +9,11 @@ func TestFilterThroughTags(t *testing.T) {
 
 	// Arrange
 	expected := true
-	tagsData := tagsData{}
+	resource := resource{}
 	filterTags := []Tag{}
 
 	// Act
-	actual := tagsData.filterThroughTags(filterTags)
+	actual := resource.filterThroughTags(filterTags)
 
 	// Assert
 	if actual != expected {

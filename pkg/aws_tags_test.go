@@ -11,8 +11,8 @@ func TestMigrateTagsToPrometheus(t *testing.T) {
 	region := "us-east-1"
 	tagItem := Tag{Key: "Name", Value: "tag_Value"}
 	tags := []*Tag{&tagItem}
-	tagData := tagsData{ID: &id, Namespace: &namespace, Region: &region, Tags: tags}
-	tagsData := []*tagsData{&tagData}
+	r := resource{ID: &id, Namespace: &namespace, Region: &region, Tags: tags}
+	resources := []*resource{&r}
 
 	// Arrange
 	prometheusMetricName := "aws_service_info"
@@ -29,7 +29,7 @@ func TestMigrateTagsToPrometheus(t *testing.T) {
 	expected := []*PrometheusMetric{&p}
 
 	// Act
-	actual := migrateTagsToPrometheus(tagsData, false)
+	actual := generateAWSInfoMetrics(resources, false)
 
 	// Assert
 	if *actual[0].name != *expected[0].name {

@@ -11,25 +11,25 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/ivx/yet-another-cloudwatch-exporter/pkg"
+	exporter "github.com/ivx/yet-another-cloudwatch-exporter/pkg"
 )
 
 var version = "custom-build"
 
 var (
-	addr                  = flag.String("listen-address", ":5000", "The address to listen on.")
-	configFile            = flag.String("config.file", "config.yml", "Path to configuration file.")
-	debug                 = flag.Bool("debug", false, "Add verbose logging.")
-	fips                  = flag.Bool("fips", false, "Use FIPS compliant aws api.")
-	showVersion           = flag.Bool("v", false, "prints current yace version.")
-	cloudwatchConcurrency = flag.Int("cloudwatch-concurrency", 5, "Maximum number of concurrent requests to CloudWatch API.")
-	tagConcurrency        = flag.Int("tag-concurrency", 5, "Maximum number of concurrent requests to Resource Tagging API.")
-	scrapingInterval      = flag.Int("scraping-interval", 300, "Seconds to wait between scraping the AWS metrics if decoupled scraping.")
-	decoupledScraping     = flag.Bool("decoupled-scraping", true, "Decouples scraping and serving of metrics.")
-	metricsPerQuery       = flag.Int("metrics-per-query", 500, "Number of metrics made in a single GetMetricsData request")
-	labelsSnakeCase       = flag.Bool("labels-snake-case", false, "If labels should be output in snake case instead of camel case")
-	floatingTimeWindow    = flag.Bool("floating-time-window", false, "Use a floating start/end time window instead of rounding times to 5 min intervals")
-	verifyConfig          = flag.Bool("verify-config", false, "Loads and attempts to parse config file, then exits. Useful for CICD validation")
+	addr                    = flag.String("listen-address", ":5000", "The address to listen on.")
+	configFile              = flag.String("config.file", "config.yml", "Path to configuration file.")
+	debug                   = flag.Bool("debug", false, "Add verbose logging.")
+	fips                    = flag.Bool("fips", false, "Use FIPS compliant aws api.")
+	showVersion             = flag.Bool("v", false, "prints current yace version.")
+	staticJobConcurrency    = flag.Int("static-job-concurrency", 5, "Maximum number of static job requests to CloudWatch API.")
+	discoveryJobConcurrency = flag.Int("discovery-job-concurrency", 5, "Maximum number of concurrent requests to Resource Tagging API and List Metrics API used by the discovery job.")
+	scrapingInterval        = flag.Int("scraping-interval", 300, "Seconds to wait between scraping the AWS metrics if decoupled scraping.")
+	decoupledScraping       = flag.Bool("decoupled-scraping", true, "Decouples scraping and serving of metrics.")
+	metricsPerQuery         = flag.Int("metrics-per-query", 500, "Number of metrics made in a single GetMetricsData request")
+	labelsSnakeCase         = flag.Bool("labels-snake-case", false, "If labels should be output in snake case instead of camel case")
+	floatingTimeWindow      = flag.Bool("floating-time-window", false, "Use a floating start/end time window instead of rounding times to 5 min intervals")
+	verifyConfig            = flag.Bool("verify-config", false, "Loads and attempts to parse config file, then exits. Useful for CICD validation")
 
 	config = exporter.ScrapeConf{}
 )
@@ -69,8 +69,8 @@ func main() {
 		os.Exit(0)
 	}
 
-	cloudwatchSemaphore := make(chan struct{}, *cloudwatchConcurrency)
-	tagSemaphore := make(chan struct{}, *tagConcurrency)
+	staticJobSemaphore := make(chan struct{}, *staticJobConcurrency)
+	discoveryJobSemaphore := make(chan struct{}, *discoveryJobConcurrency)
 
 	registry := prometheus.NewRegistry()
 
@@ -100,7 +100,7 @@ func main() {
 			for {
 				t0 := time.Now()
 				newRegistry := prometheus.NewRegistry()
-				endtime := exporter.UpdateMetrics(config, newRegistry, now, *metricsPerQuery, *fips, *floatingTimeWindow, *labelsSnakeCase, cloudwatchSemaphore, tagSemaphore)
+				endtime := exporter.UpdateMetrics(config, newRegistry, now, *metricsPerQuery, *fips, *floatingTimeWindow, *labelsSnakeCase, staticJobSemaphore, discoveryJobSemaphore)
 				now = endtime
 				log.Debug("Metrics scraped.")
 				registry = newRegistry
@@ -124,9 +124,7 @@ func main() {
 					log.Debug("Sleeping at regular sleep interval ", *scrapingInterval)
 					time.Sleep(time.Duration(*scrapingInterval) * time.Second)
 				}
-
 			}
-
 		}()
 	}
 
@@ -143,7 +141,7 @@ func main() {
 	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		if !(*decoupledScraping) {
 			newRegistry := prometheus.NewRegistry()
-			exporter.UpdateMetrics(config, newRegistry, now, *metricsPerQuery, *fips, *floatingTimeWindow, *labelsSnakeCase, cloudwatchSemaphore, tagSemaphore)
+			exporter.UpdateMetrics(config, newRegistry, now, *metricsPerQuery, *fips, *floatingTimeWindow, *labelsSnakeCase, staticJobSemaphore, discoveryJobSemaphore)
 			log.Debug("Metrics scraped.")
 			registry = newRegistry
 		}

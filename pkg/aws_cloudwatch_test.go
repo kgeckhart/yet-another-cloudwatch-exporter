@@ -66,7 +66,7 @@ func Test_getFilteredMetricDatas(t *testing.T) {
 		customTags       []Tag
 		tagsOnMetrics    exportedTagsOnMetrics
 		dimensionRegexps []*string
-		resources        []*tagsData
+		resources        []*resource
 		metricsList      []*cloudwatch.Metric
 		m                *Metric
 	}
@@ -89,7 +89,7 @@ func Test_getFilteredMetricDatas(t *testing.T) {
 					},
 				},
 				dimensionRegexps: SupportedServices.GetService("ec2").DimensionRegexps,
-				resources: []*tagsData{
+				resources: []*resource{
 					{
 						ID: aws.String("arn:aws:ec2:us-east-1:123123123123:instance/i-12312312312312312"),
 						Tags: []*Tag{
@@ -172,7 +172,7 @@ func Test_getFilteredMetricDatas(t *testing.T) {
 					},
 				},
 				dimensionRegexps: SupportedServices.GetService("kafka").DimensionRegexps,
-				resources: []*tagsData{
+				resources: []*resource{
 					{
 						ID: aws.String("arn:aws:kafka:us-east-1:123123123123:cluster/demo-cluster-1/12312312-1231-1231-1231-123123123123-12"),
 						Tags: []*Tag{

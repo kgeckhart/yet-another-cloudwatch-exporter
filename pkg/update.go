@@ -7,14 +7,13 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func UpdateMetrics(config ScrapeConf, registry *prometheus.Registry, now time.Time, metricsPerQuery int, fips, floatingTimeWindow, labelsSnakeCase bool, cloudwatchSemaphore, tagSemaphore chan struct{}) time.Time {
-	tagsData, cloudwatchData, endtime := scrapeAwsData(config, now, metricsPerQuery, fips, floatingTimeWindow, cloudwatchSemaphore, tagSemaphore)
-	var metrics []*PrometheusMetric
+func UpdateMetrics(config ScrapeConf, registry *prometheus.Registry, now time.Time, metricsPerQuery int, fips, floatingTimeWindow, labelsSnakeCase bool, staticJobSemaphore, discoveryJobSemaphore chan struct{}) time.Time {
+	resources, cloudwatchData, endtime := scrapeAwsData(config, now, metricsPerQuery, fips, floatingTimeWindow, staticJobSemaphore, discoveryJobSemaphore)
 
-	metrics = append(metrics, migrateCloudwatchToPrometheus(cloudwatchData, labelsSnakeCase)...)
+	metrics := migrateCloudwatchToPrometheus(cloudwatchData, labelsSnakeCase)
 	metrics = ensureLabelConsistencyForMetrics(metrics)
 
-	metrics = append(metrics, migrateTagsToPrometheus(tagsData, labelsSnakeCase)...)
+	metrics = append(metrics, generateAWSInfoMetrics(resources, labelsSnakeCase)...)
 
 	registry.MustRegister(NewPrometheusCollector(metrics))
 	for _, counter := range []prometheus.Counter{cloudwatchAPICounter, cloudwatchAPIErrorCounter, cloudwatchGetMetricDataAPICounter, cloudwatchGetMetricStatisticsAPICounter, resourceGroupTaggingAPICounter, autoScalingAPICounter, apiGatewayAPICounter, targetGroupsAPICounter} {
