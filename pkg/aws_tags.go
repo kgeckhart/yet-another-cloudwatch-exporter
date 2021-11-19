@@ -19,6 +19,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// Represents an AWS resource returned by the AWS GetResourcesPages API
 type resource struct {
 	ID        *string
 	Tags      []*Tag
@@ -149,6 +150,8 @@ func (iface tagsInterface) get(job *Job, region string) (resources []*resource, 
 	return resources, err
 }
 
+// generateAWSInfoMetrics transforms the provided resources in to prometheus compatible metrics of the form
+// aws_"namespace"_info with all tags from the resource added as labels
 func generateAWSInfoMetrics(resources []*resource, labelsSnakeCase bool) []*PrometheusMetric {
 	output := make([]*PrometheusMetric, 0)
 	tagList := make(map[string][]string)

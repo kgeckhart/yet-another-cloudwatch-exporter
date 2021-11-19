@@ -385,8 +385,12 @@ func createPrometheusLabels(cwd *cloudwatchData, labelsSnakeCase bool) map[strin
 	return labels
 }
 
+type metricLabels map[string]bool
+
+// ensureLabelConsistencyForMetrics accumulates all labels from the incoming metrics and adds
+// all known labels to metrics. Prometheus requires that all metrics with the same name
+// have the same set of labels
 func ensureLabelConsistencyForMetrics(metrics []*PrometheusMetric) []*PrometheusMetric {
-	type metricLabels map[string]bool
 	labelSetForMetric := make(map[string]metricLabels, 0)
 	for _, metric := range metrics {
 		if _, ok := labelSetForMetric[*metric.name]; !ok {
