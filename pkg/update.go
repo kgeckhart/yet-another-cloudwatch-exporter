@@ -1,14 +1,25 @@
 package exporter
 
 import (
-	"time"
-
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 )
 
-func UpdateMetrics(config ScrapeConf, registry *prometheus.Registry, now time.Time, metricsPerQuery int, fips, floatingTimeWindow, labelsSnakeCase bool, cloudwatchSemaphore, tagSemaphore chan struct{}) time.Time {
-	tagsData, cloudwatchData, endtime := scrapeAwsData(config, now, metricsPerQuery, fips, floatingTimeWindow, cloudwatchSemaphore, tagSemaphore)
+func UpdateMetrics(
+	config ScrapeConf,
+	registry *prometheus.Registry,
+	metricsPerQuery int,
+	labelsSnakeCase bool,
+	cloudwatchSemaphore, tagSemaphore chan struct{},
+	cache SessionCache,
+) {
+	tagsData, cloudwatchData := scrapeAwsData(
+		config,
+		metricsPerQuery,
+		cloudwatchSemaphore,
+		tagSemaphore,
+		cache,
+	)
 	var metrics []*PrometheusMetric
 
 	metrics = append(metrics, migrateCloudwatchToPrometheus(cloudwatchData, labelsSnakeCase)...)
@@ -22,5 +33,4 @@ func UpdateMetrics(config ScrapeConf, registry *prometheus.Registry, now time.Ti
 			log.Warning("Could not publish cloudwatch api metric")
 		}
 	}
-	return *endtime
 }

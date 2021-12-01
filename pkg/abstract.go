@@ -2,21 +2,29 @@ package exporter
 
 import (
 	"math"
-	"regexp"
 	"sync"
-	"time"
 
 	"github.com/aws/aws-sdk-go/service/sts"
 	log "github.com/sirupsen/logrus"
 )
 
-func scrapeAwsData(config ScrapeConf, now time.Time, metricsPerQuery int, fips, floatingTimeWindow bool, cloudwatchSemaphore, tagSemaphore chan struct{}) ([]*tagsData, []*cloudwatchData, *time.Time) {
+func scrapeAwsData(
+	config ScrapeConf,
+	metricsPerQuery int,
+	cloudwatchSemaphore, tagSemaphore chan struct{},
+	cache SessionCache,
+) ([]*taggedResource, []*cloudwatchData) {
 	mux := &sync.Mutex{}
 
 	cwData := make([]*cloudwatchData, 0)
-	awsInfoData := make([]*tagsData, 0)
-	var endtime time.Time
+	awsInfoData := make([]*taggedResource, 0)
 	var wg sync.WaitGroup
+
+	// since we have called refresh, we have loaded all the credentials
+	// into the clients and it is now safe to call concurrently. Defer the
+	// clearing, so we always clear credentials before the next scrape
+	cache.Refresh()
+	defer cache.Clear()
 
 	for _, discoveryJob := range config.Discovery.Jobs {
 		for _, role := range discoveryJob.Roles {
@@ -24,30 +32,28 @@ func scrapeAwsData(config ScrapeConf, now time.Time, metricsPerQuery int, fips, 
 				wg.Add(1)
 				go func(discoveryJob *Job, region string, role Role) {
 					defer wg.Done()
-					clientSts := createStsSession(role)
-					result, err := clientSts.GetCallerIdentity(&sts.GetCallerIdentityInput{})
-					if err != nil {
+					result, err := cache.GetSTS(role).GetCallerIdentity(&sts.GetCallerIdentityInput{})
+					if err != nil || result.Account == nil {
 						log.Printf("Couldn't get account Id for role %s: %s\n", role.RoleArn, err.Error())
-
+						return
 					}
-					accountId := result.Account
 
 					clientCloudwatch := cloudwatchInterface{
-						client: createCloudwatchSession(&region, role, fips),
+						client: cache.GetCloudwatch(&region, role),
 					}
 
 					clientTag := tagsInterface{
-						client:           createTagSession(&region, role, fips),
-						apiGatewayClient: createAPIGatewaySession(&region, role, fips),
-						asgClient:        createASGSession(&region, role, fips),
-						ec2Client:        createEC2Session(&region, role, fips),
+						account:          *result.Account,
+						client:           cache.GetTagging(&region, role),
+						apiGatewayClient: cache.GetAPIGateway(&region, role),
+						asgClient:        cache.GetASG(&region, role),
+						ec2Client:        cache.GetEC2(&region, role),
 					}
 
-					resources, metrics, end := scrapeDiscoveryJobUsingMetricData(discoveryJob, region, accountId, config.Discovery.ExportedTagsOnMetrics, clientTag, clientCloudwatch, now, metricsPerQuery, floatingTimeWindow, tagSemaphore)
+					resources, metrics := scrapeDiscoveryJobUsingMetricData(discoveryJob, region, result.Account, config.Discovery.ExportedTagsOnMetrics, clientTag, clientCloudwatch, metricsPerQuery, discoveryJob.RoundingPeriod, tagSemaphore)
 					mux.Lock()
 					awsInfoData = append(awsInfoData, resources...)
 					cwData = append(cwData, metrics...)
-					endtime = end
 					mux.Unlock()
 				}(discoveryJob, region, role)
 			}
@@ -58,21 +64,19 @@ func scrapeAwsData(config ScrapeConf, now time.Time, metricsPerQuery int, fips, 
 		for _, role := range staticJob.Roles {
 			for _, region := range staticJob.Regions {
 				wg.Add(1)
-
 				go func(staticJob *Static, region string, role Role) {
 					defer wg.Done()
-					clientSts := createStsSession(role)
-					result, err := clientSts.GetCallerIdentity(&sts.GetCallerIdentityInput{})
-					if err != nil {
+					result, err := cache.GetSTS(role).GetCallerIdentity(&sts.GetCallerIdentityInput{})
+					if err != nil || result.Account == nil {
 						log.Printf("Couldn't get account Id for role %s: %s\n", role.RoleArn, err.Error())
+						return
 					}
-					accountId := result.Account
 
 					clientCloudwatch := cloudwatchInterface{
-						client: createCloudwatchSession(&region, role, fips),
+						client: cache.GetCloudwatch(&region, role),
 					}
 
-					metrics := scrapeStaticJob(staticJob, region, accountId, clientCloudwatch, cloudwatchSemaphore)
+					metrics := scrapeStaticJob(staticJob, region, result.Account, clientCloudwatch, cloudwatchSemaphore)
 
 					mux.Lock()
 					cwData = append(cwData, metrics...)
@@ -82,7 +86,7 @@ func scrapeAwsData(config ScrapeConf, now time.Time, metricsPerQuery int, fips, 
 		}
 	}
 	wg.Wait()
-	return awsInfoData, cwData, &endtime
+	return awsInfoData, cwData
 }
 
 func scrapeStaticJob(resource *Static, region string, accountId *string, clientCloudwatch cloudwatchInterface, cloudwatchSemaphore chan struct{}) (cw []*cloudwatchData) {
@@ -133,13 +137,10 @@ func scrapeStaticJob(resource *Static, region string, accountId *string, clientC
 	return cw
 }
 
-func GetMetricDataInputLength(job *Job) int {
-	var length int
+func GetMetricDataInputLength(job *Job) int64 {
+	length := defaultLengthSeconds
 
-	// Why is this here? 120?
-	if job.Length == 0 {
-		length = 120
-	} else {
+	if job.Length > 0 {
 		length = job.Length
 	}
 	for _, metric := range job.Metrics {
@@ -157,7 +158,7 @@ func getMetricDataForQueries(
 	accountId *string,
 	tagsOnMetrics exportedTagsOnMetrics,
 	clientCloudwatch cloudwatchInterface,
-	resources []*tagsData,
+	resources []*taggedResource,
 	tagSemaphore chan struct{}) []cloudwatchData {
 	var getMetricDatas []cloudwatchData
 
@@ -190,9 +191,10 @@ func scrapeDiscoveryJobUsingMetricData(
 	accountId *string,
 	tagsOnMetrics exportedTagsOnMetrics,
 	clientTag tagsInterface,
-	clientCloudwatch cloudwatchInterface, now time.Time,
-	metricsPerQuery int, floatingTimeWindow bool,
-	tagSemaphore chan struct{}) (resources []*tagsData, cw []*cloudwatchData, endtime time.Time) {
+	clientCloudwatch cloudwatchInterface,
+	metricsPerQuery int,
+	roundingPeriod *int64,
+	tagSemaphore chan struct{}) (resources []*taggedResource, cw []*cloudwatchData) {
 
 	// Add the info tags of all the resources
 	tagSemaphore <- struct{}{}
@@ -205,18 +207,19 @@ func scrapeDiscoveryJobUsingMetricData(
 
 	svc := SupportedServices.GetService(job.Type)
 	getMetricDatas := getMetricDataForQueries(job, svc, region, accountId, tagsOnMetrics, clientCloudwatch, resources, tagSemaphore)
-	maxMetricCount := metricsPerQuery
 	metricDataLength := len(getMetricDatas)
+	if metricDataLength == 0 {
+		log.Debugf("No metrics data for %s", job.Type)
+		return
+	}
+
+	maxMetricCount := metricsPerQuery
 	length := GetMetricDataInputLength(job)
 	partition := int(math.Ceil(float64(metricDataLength) / float64(maxMetricCount)))
 
 	mux := &sync.Mutex{}
 	var wg sync.WaitGroup
 	wg.Add(partition)
-
-	if metricDataLength == 0 {
-		log.Debugf("No metrics data for %s", job.Type)
-	}
 
 	for i := 0; i < metricDataLength; i += maxMetricCount {
 		go func(i int) {
@@ -225,64 +228,28 @@ func scrapeDiscoveryJobUsingMetricData(
 			if end > metricDataLength {
 				end = metricDataLength
 			}
-			filter := createGetMetricDataInput(getMetricDatas[i:end], &svc.Namespace, length, job.Delay, now, floatingTimeWindow)
+			input := getMetricDatas[i:end]
+			filter := createGetMetricDataInput(input, &svc.Namespace, length, job.Delay, roundingPeriod)
 			data := clientCloudwatch.getMetricData(filter)
 			if data != nil {
+				output := make([]*cloudwatchData, 0)
 				for _, MetricDataResult := range data.MetricDataResults {
-					getMetricData, err := findGetMetricDataById(getMetricDatas[i:end], *MetricDataResult.Id)
+					getMetricData, err := findGetMetricDataById(input, *MetricDataResult.Id)
 					if err == nil {
 						if len(MetricDataResult.Values) != 0 {
 							getMetricData.GetMetricDataPoint = MetricDataResult.Values[0]
 							getMetricData.GetMetricDataTimestamps = MetricDataResult.Timestamps[0]
 						}
-						mux.Lock()
-						cw = append(cw, &getMetricData)
-						mux.Unlock()
+						output = append(output, &getMetricData)
 					}
 				}
+				mux.Lock()
+				cw = append(cw, output...)
+				mux.Unlock()
 			}
-			mux.Lock()
-			endtime = *filter.EndTime
-			mux.Unlock()
 		}(i)
 	}
-	//here set end time as start time
+
 	wg.Wait()
-	return resources, cw, endtime
-}
-
-func (r tagsData) filterThroughTags(filterTags []Tag) bool {
-	tagMatches := 0
-
-	for _, resourceTag := range r.Tags {
-		for _, filterTag := range filterTags {
-			if resourceTag.Key == filterTag.Key {
-				r, _ := regexp.Compile(filterTag.Value)
-				if r.MatchString(resourceTag.Value) {
-					tagMatches++
-				}
-			}
-		}
-	}
-
-	return tagMatches == len(filterTags)
-}
-
-func (r tagsData) metricTags(tagsOnMetrics exportedTagsOnMetrics) []Tag {
-	tags := make([]Tag, 0)
-	for _, tagName := range tagsOnMetrics[*r.Namespace] {
-		tag := Tag{
-			Key: tagName,
-		}
-		for _, resourceTag := range r.Tags {
-			if resourceTag.Key == tagName {
-				tag.Value = resourceTag.Value
-				break
-			}
-		}
-
-		// Always add the tag, even if it's empty, to ensure the same labels are present on all metrics for a single service
-		tags = append(tags, tag)
-	}
-	return tags
+	return resources, cw
 }

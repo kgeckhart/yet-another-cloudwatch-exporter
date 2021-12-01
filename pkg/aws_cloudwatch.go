@@ -11,16 +11,15 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
-	"github.com/aws/aws-sdk-go/service/sts"
 
 	log "github.com/sirupsen/logrus"
 )
 
 var percentile = regexp.MustCompile(`^p(\d{1,2}(\.\d{0,2})?|100)$`)
+
+const timeFormat = "2006-01-02T15:04:05.999999-07:00"
 
 type cloudwatchInterface struct {
 	client cloudwatchiface.CloudWatchAPI
@@ -45,58 +44,8 @@ type cloudwatchData struct {
 	Period                  int64
 }
 
-func createStsSession(role Role) *sts.STS {
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-	}))
-	maxStsRetries := 5
-	config := &aws.Config{MaxRetries: &maxStsRetries}
-	if log.IsLevelEnabled(log.DebugLevel) {
-		config.LogLevel = aws.LogLevel(aws.LogDebugWithHTTPBody)
-	}
-	if role.RoleArn != "" {
-		config.Credentials = stscreds.NewCredentials(sess, role.RoleArn, func(p *stscreds.AssumeRoleProvider) {
-			if role.ExternalID != "" {
-				p.ExternalID = aws.String(role.ExternalID)
-			}
-		})
-	}
-	return sts.New(sess, config)
-}
-
-func createCloudwatchSession(region *string, role Role, fips bool) *cloudwatch.CloudWatch {
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-		Config:            aws.Config{Region: aws.String(*region)},
-	}))
-
-	maxCloudwatchRetries := 5
-
-	config := &aws.Config{Region: region, MaxRetries: &maxCloudwatchRetries}
-
-	if fips {
-		// https://docs.aws.amazon.com/general/latest/gr/cw_region.html
-		endpoint := fmt.Sprintf("https://monitoring-fips.%s.amazonaws.com", *region)
-		config.Endpoint = aws.String(endpoint)
-	}
-
-	if log.IsLevelEnabled(log.DebugLevel) {
-		config.LogLevel = aws.LogLevel(aws.LogDebugWithHTTPBody)
-	}
-
-	if role.RoleArn != "" {
-		config.Credentials = stscreds.NewCredentials(sess, role.RoleArn, func(p *stscreds.AssumeRoleProvider) {
-			if role.ExternalID != "" {
-				p.ExternalID = aws.String(role.ExternalID)
-			}
-		})
-	}
-
-	return cloudwatch.New(sess, config)
-}
-
 func createGetMetricStatisticsInput(dimensions []*cloudwatch.Dimension, namespace *string, metric *Metric) (output *cloudwatch.GetMetricStatisticsInput) {
-	period := int64(metric.Period)
+	period := metric.Period
 	length := metric.Length
 	delay := metric.Delay
 	endTime := time.Now().Add(-time.Duration(delay) * time.Second)
@@ -123,17 +72,16 @@ func createGetMetricStatisticsInput(dimensions []*cloudwatch.Dimension, namespac
 		ExtendedStatistics: extendedStatistics,
 	}
 
-	if len(statistics) != 0 {
-		log.Debug("CLI helper - " +
-			"aws cloudwatch get-metric-statistics" +
-			" --metric-name " + metric.Name +
-			" --dimensions " + dimensionsToCliString(dimensions) +
-			" --namespace " + *namespace +
-			" --statistics " + *statistics[0] +
-			" --period " + strconv.FormatInt(period, 10) +
-			" --start-time " + startTime.Format(time.RFC3339) +
-			" --end-time " + endTime.Format(time.RFC3339))
-	}
+	log.Debug("CLI helper - " +
+		"aws cloudwatch get-metric-statistics" +
+		" --metric-name " + metric.Name +
+		" --dimensions " + dimensionsToCliString(dimensions) +
+		" --namespace " + *namespace +
+		" --statistics " + *statistics[0] +
+		" --period " + strconv.FormatInt(period, 10) +
+		" --start-time " + startTime.Format(time.RFC3339) +
+		" --end-time " + endTime.Format(time.RFC3339))
+
 	log.Debug(*output)
 	return output
 }
@@ -148,9 +96,13 @@ func findGetMetricDataById(getMetricDatas []cloudwatchData, value string) (cloud
 	return g, fmt.Errorf("Metric with id %s not found", value)
 }
 
-func createGetMetricDataInput(getMetricData []cloudwatchData, namespace *string, length int, delay int, now time.Time, floatingTimeWindow bool) (output *cloudwatch.GetMetricDataInput) {
+func createGetMetricDataInput(getMetricData []cloudwatchData, namespace *string, length int64, delay int64, configuredRoundingPeriod *int64) (output *cloudwatch.GetMetricDataInput) {
 	var metricsDataQuery []*cloudwatch.MetricDataQuery
+	roundingPeriod := defaultPeriodSeconds
 	for _, data := range getMetricData {
+		if data.Period < roundingPeriod {
+			roundingPeriod = data.Period
+		}
 		metricStat := &cloudwatch.MetricStat{
 			Metric: &cloudwatch.Metric{
 				Dimensions: data.Dimensions,
@@ -166,24 +118,19 @@ func createGetMetricDataInput(getMetricData []cloudwatchData, namespace *string,
 			MetricStat: metricStat,
 			ReturnData: &ReturnData,
 		})
-
 	}
 
-	var endTime time.Time
-	var startTime time.Time
-	if now.IsZero() {
-		//This is first run
-		if floatingTimeWindow {
-			now = time.Now()
-		} else {
-			now = time.Now().Round(5 * time.Minute)
-		}
-		endTime = now.Add(-time.Duration(delay) * time.Second)
-		startTime = now.Add(-(time.Duration(length) + time.Duration(delay)) * time.Second)
-	} else {
-		endTime = now.Add(time.Duration(length) * time.Second)
-		startTime = now
+	if configuredRoundingPeriod != nil {
+		roundingPeriod = *configuredRoundingPeriod
 	}
+
+	startTime, endTime := determineGetMetricDataWindow(
+		TimeClock{},
+		time.Duration(roundingPeriod)*time.Second,
+		time.Duration(length)*time.Second,
+		time.Duration(delay)*time.Second)
+	log.Debug("GetMetricData start time: ", startTime.Format(timeFormat))
+	log.Debug("GetMetricData end time: ", endTime.Format(timeFormat))
 
 	dataPointOrder := "TimestampDescending"
 	output = &cloudwatch.GetMetricDataInput{
@@ -194,6 +141,34 @@ func createGetMetricDataInput(getMetricData []cloudwatchData, namespace *string,
 	}
 
 	return output
+}
+
+// Clock small interface which allows for stubbing the time.Now() function for unit testing
+type Clock interface {
+	Now() time.Time
+}
+
+// TimeClock implementation of Clock interface which delegates to Go's Time package
+type TimeClock struct{}
+
+func (tc TimeClock) Now() time.Time {
+	return time.Now()
+}
+
+// determineGetMetricDataWindow computes the start and end time for the GetMetricData request to AWS
+// Always uses the wall clock time as starting point for calculations to ensure that
+// a variety of exporter configurations will work reliably.
+func determineGetMetricDataWindow(clock Clock, roundingPeriod time.Duration, length time.Duration, delay time.Duration) (time.Time, time.Time) {
+	now := clock.Now()
+	if roundingPeriod > 0 {
+		// Round down the time to a factor of the period - rounding is recommended by AWS:
+		// https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_GetMetricData.html#API_GetMetricData_RequestParameters
+		now = now.Add(-roundingPeriod / 2).Round(roundingPeriod)
+	}
+
+	startTime := now.Add(-(length + delay))
+	endTime := now.Add(-delay)
+	return startTime, endTime
 }
 
 func createListMetricsInput(dimensions []*cloudwatch.Dimension, namespace *string, metricsName *string) (output *cloudwatch.ListMetricsInput) {
@@ -298,8 +273,8 @@ func getFullMetricsList(namespace string, metric *Metric, clientCloudwatch cloud
 	return &res, nil
 }
 
-func getFilteredMetricDatas(region string, accountId *string, namespace string, customTags []Tag, tagsOnMetrics exportedTagsOnMetrics, dimensionRegexps []*string, resources []*tagsData, metricsList []*cloudwatch.Metric, m *Metric) (getMetricsData []cloudwatchData) {
-	type filterValues map[string]*tagsData
+func getFilteredMetricDatas(region string, accountId *string, namespace string, customTags []Tag, tagsOnMetrics exportedTagsOnMetrics, dimensionRegexps []*string, resources []*taggedResource, metricsList []*cloudwatch.Metric, m *Metric) (getMetricsData []cloudwatchData) {
+	type filterValues map[string]*taggedResource
 	dimensionsFilter := make(map[string]filterValues)
 	for _, dr := range dimensionRegexps {
 		dimensionRegexp := regexp.MustCompile(*dr)
@@ -313,8 +288,8 @@ func getFilteredMetricDatas(region string, accountId *string, namespace string, 
 			}
 		}
 		for _, r := range resources {
-			if dimensionRegexp.Match([]byte(*r.ID)) {
-				dimensionMatch := dimensionRegexp.FindStringSubmatch(*r.ID)
+			if dimensionRegexp.Match([]byte(r.ARN)) {
+				dimensionMatch := dimensionRegexp.FindStringSubmatch(r.ARN)
 				for i, value := range dimensionMatch {
 					if i != 0 {
 						dimensionsFilter[names[i]][value] = r
@@ -325,9 +300,9 @@ func getFilteredMetricDatas(region string, accountId *string, namespace string, 
 	}
 	for _, cwMetric := range metricsList {
 		skip := false
-		r := &tagsData{
-			ID:        aws.String("global"),
-			Namespace: &namespace,
+		r := &taggedResource{
+			ARN:       "global",
+			Namespace: namespace,
 		}
 		for _, dimension := range cwMetric.Dimensions {
 			if dimensionFilterValues, ok := dimensionsFilter[*dimension.Name]; ok {
@@ -344,7 +319,7 @@ func getFilteredMetricDatas(region string, accountId *string, namespace string, 
 				id := fmt.Sprintf("id_%d", rand.Int())
 				metricTags := r.metricTags(tagsOnMetrics)
 				getMetricsData = append(getMetricsData, cloudwatchData{
-					ID:                     r.ID,
+					ID:                     &r.ARN,
 					MetricID:               &id,
 					Metric:                 &m.Name,
 					Namespace:              &namespace,
@@ -493,7 +468,7 @@ func migrateCloudwatchToPrometheus(cwd []*cloudwatchData, labelsSnakeCase bool) 
 				includeTimestamp = *c.AddCloudwatchTimestamp
 			}
 			exportedDatapoint, timestamp := getDatapoint(c, statistic)
-			if exportedDatapoint == nil && c.AddCloudwatchTimestamp == nil {
+			if exportedDatapoint == nil && (c.AddCloudwatchTimestamp == nil || !*c.AddCloudwatchTimestamp) {
 				var nan float64 = math.NaN()
 				exportedDatapoint = &nan
 				includeTimestamp = false

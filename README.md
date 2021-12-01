@@ -40,11 +40,14 @@ We will contact you as soon as possible.
   * apigateway (AWS/ApiGateway) - API Gateway
   * appsync (AWS/AppSync) - AppSync
   * athena (AWS/Athena) - Athena
+  * beanstalk (AWS/ElasticBeanstalk) - Elastic Beanstalk
   * billing (AWS/Billing) - Billing
   * cassandra (AWS/Cassandra) - Cassandra
   * cloudfront (AWS/CloudFront) - Cloud Front
   * cognito-idp (AWS/Cognito) - Cognito
+  * dms (AWS/DocDB) - Database Migration Service
   * docdb (AWS/DocDB) - DocumentDB (with MongoDB compatibility)
+  * dx (AWS/DX) - Direct Connect
   * dynamodb (AWS/DynamoDB) - NoSQL Key-Value Database
   * ebs (AWS/EBS) - Elastic Block Storage
   * ec (AWS/Elasticache) - ElastiCache
@@ -69,7 +72,8 @@ We will contact you as soon as possible.
   * nlb (AWS/NetworkELB) - Network Load Balancer
   * redshift (AWS/Redshift) - Redshift Database
   * rds (AWS/RDS) - Relational Database Service
-  * r53r (AWS/Route53Resolver) - Route53 Resolver
+  * route53 (AWS/Route53) - Route53 Health Checks
+  * route53-resolver (AWS/Route53Resolver) - Route53 Resolver
   * s3 (AWS/S3) - Object Storage
   * ses (AWS/SES) - Simple Email Service
   * shield (AWS/DDoSProtection) - Distributed Denial of Service (DDoS) protection service
@@ -96,14 +100,14 @@ We will contact you as soon as possible.
 | Option               | Description                                                                       |
 | -------------------- | --------------------------------------------------------------------------------- |
 | labels-snake-case    | Causes labels on metrics to be output in snake case instead of camel case         |
-| floating-time-window | Use a floating start/end time window instead of rounding times to 5 min intervals |
 
 ### Top level configuration
 
-| Key       | Description                   |
-| --------- | ----------------------------- |
-| discovery | Auto-discovery configuration  |
-| static    | List of static configurations |
+| Key        | Description                   |
+| ---------- | ----------------------------- |
+| apiVersion | Configuration file version    |
+| discovery  | Auto-discovery configuration  |
+| static     | List of static configurations |
 
 ### Auto-discovery configuration
 
@@ -128,12 +132,14 @@ Note: Only [tagged resources](https://docs.aws.amazon.com/general/latest/gr/aws_
 | Key                    | Description                                                                                              |
 | ---------------------- | -------------------------------------------------------------------------------------------------------- |
 | regions                | List of AWS regions                                                                                      |
-| type                   | Cloudwatch service alias ("alb", "ec2", etc) or namespace name ("AWS/EC2", "AWS/S3", etc).                                                |
+| type                   | Cloudwatch service alias ("alb", "ec2", etc) or namespace name ("AWS/EC2", "AWS/S3", etc).               |
 | length (Default 120)   | How far back to request data for in seconds                                                              |
 | delay                  | If set it will request metrics up until `current_time - delay`                                           |
 | roles                  | List of IAM roles to assume (optional)                                                                   |
 | searchTags             | List of Key/Value pairs to use for tag filtering (all must match), Value can be a regex.                 |
 | period                 | Statistic period in seconds (General Setting for all metrics in this job)                                |
+| statistics             | List of statistic types, e.g. "Minimum", "Maximum", etc (General Setting for all metrics in this job)    |
+| roundingPeriod         | Specifies how the current time is rounded before calculating start/end times for CloudWatch GetMetricData requests. This rounding is optimize performance of the CloudWatch request. This setting only makes sense to use if, for example, you specify a very long period (such as 1 day) but want your times rounded to a shorter time (such as 5 minutes).  to For example, a value of 300 will round the current time to the nearest 5 minutes. If not specified, the roundingPeriod defaults to the same value as shortest period in the job.                     |
 | addCloudwatchTimestamp | Export the metric with the original CloudWatch timestamp (General Setting for all metrics in this job)   |
 | customTags             | Custom tags to be added as a list of Key/Value pairs                                                     |
 | metrics                | List of metric definitions                                                                               |
@@ -178,6 +184,7 @@ general setting.  The currently inherited settings are period, and addCloudwatch
 ### Example of config File
 
 ```yaml
+apiVersion: v1alpha1
 discovery:
   exportedTagsOnMetrics:
     ec2:
@@ -217,6 +224,10 @@ discovery:
       - eu-west-1
     length: 900
     delay: 120
+    statistics:
+      - Minimum
+      - Maximum
+      - Sum
     searchTags:
       - key: KubernetesCluster
         value: production-19
@@ -233,6 +244,8 @@ discovery:
         length: 900 #(this will be ignored)
         delay: 300 #(this will be ignored)
         nilToZero: true
+      - name: HTTPCode_Backend_5XX
+        period: 60
   - type: alb
     regions:
       - eu-west-1
@@ -455,9 +468,9 @@ Multiple roleArns are useful, when you are monitoring multi-account setup, where
       regions:
         - eu-north-1
       roles:
-        - roleArn: "arn:aws:iam:1111111111111:role/prometheus" # newspaper
-        - roleArn: "arn:aws:iam:2222222222222:role/prometheus" # radio
-        - roleArn: "arn:aws:iam:3333333333333:role/prometheus" # television
+        - roleArn: "arn:aws:iam::1111111111111:role/prometheus" # newspaper
+        - roleArn: "arn:aws:iam::2222222222222:role/prometheus" # radio
+        - roleArn: "arn:aws:iam::3333333333333:role/prometheus" # television
       metrics:
         - name: MemoryReservation
           statistics:
@@ -472,7 +485,7 @@ Additionally, if the IAM role you want to assume requires an [External ID](https
 
 ```yaml
   roles:
-    - roleArn: "arn:aws:iam:1111111111111:role/prometheus"
+    - roleArn: "arn:aws:iam::1111111111111:role/prometheus"
       externalId: "shared-external-identifier"
 ```
 
@@ -482,9 +495,11 @@ The flags 'cloudwatch-concurrency' and 'tag-concurrency' define the number of co
 Setting a higher value makes faster scraping times but can incur in throttling and the blocking of the API.
 
 ### Decoupled scraping
-The flag 'decoupled-scraping' makes the exporter to scrape Cloudwatch metrics in background in fixed intervals, in stead of each time that the '/metrics' endpoint is fetched. This protects from the abuse of API requests that can cause extra billing in AWS account. This flag is activated by default.
+The exporter scraped cloudwatch metrics in the background in fixed interval.
+This protects from the abuse of API requests that can cause extra billing in AWS account.
 
-If the flag 'decoupled-scraping' is activated, the flag 'scraping-interval' defines the seconds between scrapes. Its default value is 300.
+The flag 'scraping-interval' defines the seconds between scrapes.
+The default value is 300.
 
 ## Troubleshooting / Debugging
 

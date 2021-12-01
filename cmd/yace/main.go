@@ -1,7 +1,7 @@
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -10,26 +10,26 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
+	"github.com/urfave/cli/v2"
+	"golang.org/x/sync/semaphore"
 
-	"github.com/ivx/yet-another-cloudwatch-exporter/pkg"
+	exporter "github.com/nerdswords/yet-another-cloudwatch-exporter/pkg"
 )
 
 var version = "custom-build"
 
+var sem = semaphore.NewWeighted(1)
+
 var (
-	addr                  = flag.String("listen-address", ":5000", "The address to listen on.")
-	configFile            = flag.String("config.file", "config.yml", "Path to configuration file.")
-	debug                 = flag.Bool("debug", false, "Add verbose logging.")
-	fips                  = flag.Bool("fips", false, "Use FIPS compliant aws api.")
-	showVersion           = flag.Bool("v", false, "prints current yace version.")
-	cloudwatchConcurrency = flag.Int("cloudwatch-concurrency", 5, "Maximum number of concurrent requests to CloudWatch API.")
-	tagConcurrency        = flag.Int("tag-concurrency", 5, "Maximum number of concurrent requests to Resource Tagging API.")
-	scrapingInterval      = flag.Int("scraping-interval", 300, "Seconds to wait between scraping the AWS metrics if decoupled scraping.")
-	decoupledScraping     = flag.Bool("decoupled-scraping", true, "Decouples scraping and serving of metrics.")
-	metricsPerQuery       = flag.Int("metrics-per-query", 500, "Number of metrics made in a single GetMetricsData request")
-	labelsSnakeCase       = flag.Bool("labels-snake-case", false, "If labels should be output in snake case instead of camel case")
-	floatingTimeWindow    = flag.Bool("floating-time-window", false, "Use a floating start/end time window instead of rounding times to 5 min intervals")
-	verifyConfig          = flag.Bool("verify-config", false, "Loads and attempts to parse config file, then exits. Useful for CICD validation")
+	addr                  string
+	configFile            string
+	debug                 bool
+	fips                  bool
+	cloudwatchConcurrency int
+	tagConcurrency        int
+	scrapingInterval      int
+	metricsPerQuery       int
+	labelsSnakeCase       bool
 
 	config = exporter.ScrapeConf{}
 )
@@ -48,110 +48,167 @@ func init() {
 }
 
 func main() {
-	flag.Parse()
-
-	if *showVersion {
-		fmt.Println(version)
-		os.Exit(0)
+	yace := cli.NewApp()
+	yace.Name = "Yet Another CloudWatch Exporter"
+	yace.Version = version
+	yace.Usage = "YACE configured to retrieve CloudWatch metrics through the AWS API"
+	yace.Description = ""
+	yace.Authors = []*cli.Author{
+		{Name: "", Email: ""},
 	}
 
-	if *debug {
+	yace.Flags = []cli.Flag{
+		&cli.StringFlag{Name: "listen-address", Value: ":5000", Usage: "The address to listen on.", Destination: &addr, EnvVars: []string{"listen-address"}},
+		&cli.StringFlag{Name: "config.file", Value: "config.yml", Usage: "Path to configuration file.", Destination: &configFile, EnvVars: []string{"config.file"}},
+		&cli.BoolFlag{Name: "debug", Value: false, Usage: "Add verbose logging.", Destination: &debug, EnvVars: []string{"debug"}},
+		&cli.BoolFlag{Name: "fips", Value: false, Usage: "Use FIPS compliant aws api.", Destination: &fips},
+		&cli.IntFlag{Name: "cloudwatch-concurrency", Value: 5, Usage: "Maximum number of concurrent requests to CloudWatch API.", Destination: &cloudwatchConcurrency},
+		&cli.IntFlag{Name: "tag-concurrency", Value: 5, Usage: "Maximum number of concurrent requests to Resource Tagging API.", Destination: &tagConcurrency},
+		&cli.IntFlag{Name: "scraping-interval", Value: 300, Usage: "Seconds to wait between scraping the AWS metrics", Destination: &scrapingInterval, EnvVars: []string{"scraping-interval"}},
+		&cli.IntFlag{Name: "metrics-per-query", Value: 500, Usage: "Number of metrics made in a single GetMetricsData request", Destination: &metricsPerQuery, EnvVars: []string{"metrics-per-query"}},
+		&cli.BoolFlag{Name: "labels-snake-case", Value: false, Usage: "If labels should be output in snake case instead of camel case", Destination: &labelsSnakeCase},
+	}
+
+	yace.Commands = []*cli.Command{
+		{Name: "verify-config", Aliases: []string{"vc"}, Usage: "Loads and attempts to parse config file, then exits. Useful for CICD validation",
+			Flags: []cli.Flag{
+				&cli.StringFlag{Name: "config.file", Value: "config.yml", Usage: "Path to configuration file.", Destination: &configFile},
+			},
+			Action: func(c *cli.Context) error {
+				log.Info("Config ", configFile, " is valid")
+				os.Exit(0)
+				return nil
+			}},
+		{Name: "version", Aliases: []string{"v"}, Usage: "prints current yace version.",
+			Action: func(c *cli.Context) error {
+				fmt.Println(version)
+				os.Exit(0)
+				return nil
+			}},
+	}
+
+	err := yace.Run(os.Args)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if debug {
 		log.SetLevel(log.DebugLevel)
 	}
 
 	log.Println("Parse config..")
-	if err := config.Load(configFile); err != nil {
-		log.Fatal("Couldn't read ", *configFile, ": ", err)
+	if err := config.Load(&configFile); err != nil {
+		log.Fatal("Couldn't read ", configFile, ": ", err)
 		os.Exit(1)
 	}
-	if *verifyConfig {
-		log.Info("Config ", *configFile, " is valid")
-		os.Exit(0)
-	}
-
-	cloudwatchSemaphore := make(chan struct{}, *cloudwatchConcurrency)
-	tagSemaphore := make(chan struct{}, *tagConcurrency)
-
-	registry := prometheus.NewRegistry()
 
 	log.Println("Startup completed")
-	//Variables to hold last scrape time
-	var now time.Time
-	//variable to hold total processing time.
-	var processingtimeTotal time.Duration
-	maxjoblength := 0
+
+	var maxJobLength int64
 	for _, discoveryJob := range config.Discovery.Jobs {
 		length := exporter.GetMetricDataInputLength(discoveryJob)
-		//S3 can have upto 1 day to day will need to address it in seprate block
+		//S3 can have upto 1 day to day will need to address it in seperate block
 		//TBD
 		svc := exporter.SupportedServices.GetService(discoveryJob.Type)
-		if (maxjoblength < length) && !svc.IgnoreLength {
-			maxjoblength = length
+		if (maxJobLength < length) && !svc.IgnoreLength {
+			maxJobLength = length
 		}
 	}
 
-	//To aviod future timestamp issue we need make sure scrape intervel is atleast at the same level as that of highest job length
-	if *scrapingInterval < maxjoblength {
-		*scrapingInterval = maxjoblength
-	}
+	s := NewScraper()
+	cache := exporter.NewSessionCache(config, fips)
 
-	if *decoupledScraping {
-		go func() {
-			for {
-				t0 := time.Now()
-				newRegistry := prometheus.NewRegistry()
-				endtime := exporter.UpdateMetrics(config, newRegistry, now, *metricsPerQuery, *fips, *floatingTimeWindow, *labelsSnakeCase, cloudwatchSemaphore, tagSemaphore)
-				now = endtime
-				log.Debug("Metrics scraped.")
-				registry = newRegistry
-				t1 := time.Now()
-				processingtime := t1.Sub(t0)
-				processingtimeTotal = processingtimeTotal + processingtime
-				if processingtimeTotal.Seconds() > 60.0 {
-					sleepinterval := *scrapingInterval - int(processingtimeTotal.Seconds())
-					//reset processingtimeTotal
-					processingtimeTotal = 0
-					if sleepinterval <= 0 {
-						//TBD use cases is when metrics like EC2 and EBS take more scrapping interval like 6 to 7 minutes to finish
-						log.Debug("Unable to sleep since we lagging behind please try adjusting your scrape interval or running this instance with less number of metrics")
-						continue
-					} else {
-						log.Debug("Sleeping smaller intervals to catchup with lag", sleepinterval)
-						time.Sleep(time.Duration(sleepinterval) * time.Second)
-					}
+	ctx := context.Background() // ideally this should be carried to the aws calls
 
-				} else {
-					log.Debug("Sleeping at regular sleep interval ", *scrapingInterval)
-					time.Sleep(time.Duration(*scrapingInterval) * time.Second)
-				}
+	go s.decoupled(ctx, cache)
 
-			}
-
-		}()
-	}
+	http.HandleFunc("/metrics", s.makeHandler(ctx, cache))
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<html>
-		<head><title>Yet another cloudwatch exporter</title></head>
-		<body>
-		<h1>Thanks for using our product :)</h1>
-		<p><a href="/metrics">Metrics</a></p>
-		</body>
-		</html>`))
+    <head><title>Yet another cloudwatch exporter</title></head>
+    <body>
+    <h1>Thanks for using our product :)</h1>
+    <p><a href="/metrics">Metrics</a></p>
+    </body>
+    </html>`))
 	})
 
-	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		if !(*decoupledScraping) {
-			newRegistry := prometheus.NewRegistry()
-			exporter.UpdateMetrics(config, newRegistry, now, *metricsPerQuery, *fips, *floatingTimeWindow, *labelsSnakeCase, cloudwatchSemaphore, tagSemaphore)
-			log.Debug("Metrics scraped.")
-			registry = newRegistry
+	http.HandleFunc("/reload", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			return
 		}
-		handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+		log.Println("Parse config..")
+		if err := config.Load(&configFile); err != nil {
+			log.Fatal("Couldn't read ", &configFile, ": ", err)
+		}
+
+		log.Println("Reset session cache")
+		cache = exporter.NewSessionCache(config, fips)
+		go s.decoupled(ctx, cache)
+	})
+
+	log.Fatal(http.ListenAndServe(addr, nil))
+}
+
+type scraper struct {
+	cloudwatchSemaphore chan struct{}
+	tagSemaphore        chan struct{}
+	registry            *prometheus.Registry
+}
+
+func NewScraper() *scraper {
+	return &scraper{
+		cloudwatchSemaphore: make(chan struct{}, cloudwatchConcurrency),
+		tagSemaphore:        make(chan struct{}, tagConcurrency),
+		registry:            prometheus.NewRegistry(),
+	}
+}
+
+func (s *scraper) makeHandler(ctx context.Context, cache exporter.SessionCache) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		handler := promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{
 			DisableCompression: false,
 		})
 		handler.ServeHTTP(w, r)
-	})
+	}
+}
 
-	log.Fatal(http.ListenAndServe(*addr, nil))
+func (s *scraper) decoupled(ctx context.Context, cache exporter.SessionCache) {
+	log.Debug("Starting scraping async")
+	log.Debug("Scrape initially first time")
+	s.scrape(ctx, cache)
+
+	scrapingDuration := time.Duration(scrapingInterval) * time.Second
+	ticker := time.NewTicker(scrapingDuration)
+	log.Debugf("Scraping every %d seconds", scrapingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			log.Debug("Starting scraping async")
+			go s.scrape(ctx, cache)
+		}
+	}
+}
+
+func (s *scraper) scrape(ctx context.Context, cache exporter.SessionCache) {
+	if !sem.TryAcquire(1) {
+		// This shouldn't happen under normal use, users should adjust their configuration when this occurs.
+		// Let them know by logging a warning.
+		log.Warn("Another scrape is already in process, will not start a new one. " +
+			"Adjust your configuration to ensure the previous scrape completes first.")
+		return
+	}
+	defer sem.Release(1)
+
+	newRegistry := prometheus.NewRegistry()
+	exporter.UpdateMetrics(config, newRegistry, metricsPerQuery, labelsSnakeCase, s.cloudwatchSemaphore, s.tagSemaphore, cache)
+
+	// this might have a data race to access registry
+	s.registry = newRegistry
+	log.Debug("Metrics scraped.")
 }

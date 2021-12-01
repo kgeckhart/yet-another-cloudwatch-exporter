@@ -1,3 +1,75 @@
+# 0.32.0-alpha
+* [BREAKING] Fix the calculation of start and end times for GetMetricData (csquire)
+```
+floating-time-window is now replaced with roundingPeriod
+
+Specifies how the current time is rounded before calculating start/end times for CloudWatch GetMetricData requests. This rounding is optimize performance of the CloudWatch request. This setting only makes sense to use if, for example, you specify a very long period (such as 1 day) but want your times rounded to a shorter time (such as 5 minutes). to For example, a value of 300 will round the current time to the nearest 5 minutes. If not specified, the roundingPeriod defaults to the same value as shortest period in the job.
+```
+* Improve testing / linting (cristiangreco)
+* Verify cli parameters and improve cli parsing (a0s)
+* Allow to configure yace cli parameters via env variables (a0s)
+* Improve error handling of cloudwatch (matthewnolf)
+* Add support for directconnect and route53 health checks
+* Improve throttling handling to AWS APIs (anilkun)
+* Add issue templates to improve support (NickLarsenNZ)
+* Allow setting default values for statistics (surminus)
+* Fix apigateway method and resouce dimension bug (aleslash)
+
+Thanks a lot to all contributors! - Lovely to see so much efforts especially in testing
+to get this project more and more stable. - I know we are far away from a nice tested
+code base but we are improving in the right direction and I really love to see all
+of your efforts there. It is really appreciated from my side.
+
+I just contacted AWS to get some open source credits so we can build some kind of
+end to end tests. This shoud allow us to find tricky bugs earlier and not only when we ship
+things.
+
+Love to all of you, Thomas!
+
+# 0.31.0-alpha
+* [BREAKING] Decoupled scraping is now default. Removed code which allowed to use scraper without it.
+```
+# Those flags are just ignored
+-decoupled-scraping=false
+-decoupled-scraping=true
+```
+* [BREAKING] Small timeframes of scraping can be used again now. In the past yace decided the scraping
+  interval based on config. This magic was removed for simplicity.
+```
+# In the past this would have in some cases still set --scraping-interval 600
+--scraping-interval 10
+# Now it really would scrape every 10 seconds which could introduce big API costs. So please watch
+# your API requests!
+--scraping-interval 10
+```
+* Fix problems with start/endtime of scrapes (klarrio-dlamb)
+* Add support for Database Migration Service metrics
+* Allow to hotreload config via /reload (antoniomerlin)
+
+# 0.30.1-alpha
+* *SECURITY* Fix issue with building binaries. Please update to mitigate (https://nvd.nist.gov/vuln/detail/CVE-2020-14039)
+* Thanks jeason81 for reporting this security incident!
+
+# 0.30.0-alpha
+* *BREAKING* Introduce new version field to config file (jylitalo)
+```
+# Before
+discovery:
+  jobs:
+# After
+apiVersion: v1alpha1
+discovery:
+  jobs:
+```
+* [BUG] Fix issues with nilToZero (eminugurkenar)
+* [BUG] Fix race condition setting end time for discovery jobs (cristiangreco)
+* Simplify session creation code (jylitalo)
+* Major improvement of aws discovery code (jylitalo)
+* Major rewrite of the async scraping logic (rabunkosar-dd)
+* Add support for AWS/ElasticBeanstalk (andyzasl)
+* Upgrade golang to 1.17
+* Upgrade golang libraries to newest versions
+
 # 0.29.0-alpha
 Okay, private things settled. We have a new organisation for
 the project. Lets boost it and get the open PRs merged!

@@ -9,9 +9,14 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+const defaultPeriodSeconds = int64(300)
+const defaultLengthSeconds = int64(300)
+const defaultDelaySeconds = int64(300)
+
 type ScrapeConf struct {
-	Discovery Discovery `yaml:"discovery"`
-	Static    []*Static `yaml:"static"`
+	ApiVersion string    `yaml:"apiVersion"`
+	Discovery  Discovery `yaml:"discovery"`
+	Static     []*Static `yaml:"static"`
 }
 
 type Discovery struct {
@@ -28,9 +33,11 @@ type Job struct {
 	SearchTags             []Tag     `yaml:"searchTags"`
 	CustomTags             []Tag     `yaml:"customTags"`
 	Metrics                []*Metric `yaml:"metrics"`
-	Length                 int       `yaml:"length"`
-	Delay                  int       `yaml:"delay"`
-	Period                 int       `yaml:"period"`
+	Length                 int64     `yaml:"length"`
+	Delay                  int64     `yaml:"delay"`
+	Period                 int64     `yaml:"period"`
+	RoundingPeriod         *int64    `yaml:"roundingPeriod"`
+	Statistics             []string  `yaml:"statistics"`
 	AddCloudwatchTimestamp *bool     `yaml:"addCloudwatchTimestamp"`
 	NilToZero              *bool     `yaml:"nilToZero"`
 }
@@ -53,9 +60,9 @@ type Role struct {
 type Metric struct {
 	Name                   string   `yaml:"name"`
 	Statistics             []string `yaml:"statistics"`
-	Period                 int      `yaml:"period"`
-	Length                 int      `yaml:"length"`
-	Delay                  int      `yaml:"delay"`
+	Period                 int64    `yaml:"period"`
+	Length                 int64    `yaml:"length"`
+	Delay                  int64    `yaml:"delay"`
 	NilToZero              *bool    `yaml:"nilToZero"`
 	AddCloudwatchTimestamp *bool    `yaml:"addCloudwatchTimestamp"`
 }
@@ -120,6 +127,9 @@ func (c *ScrapeConf) Validate() error {
 				return err
 			}
 		}
+	}
+	if c.ApiVersion != "" && c.ApiVersion != "v1alpha1" {
+		return fmt.Errorf("apiVersion line missing or version is unknown (%s)", c.ApiVersion)
 	}
 
 	return nil
@@ -197,15 +207,22 @@ func (m *Metric) validateMetric(metricIdx int, parent string, discovery *Job) er
 	if m.Name == "" {
 		return fmt.Errorf("Metric [%s/%d] in %v: Name should not be empty", m.Name, metricIdx, parent)
 	}
-	if len(m.Statistics) == 0 {
-		return fmt.Errorf("Metric [%s/%d] in %v: Statistics should not be empty", m.Name, metricIdx, parent)
+
+	mStatistics := m.Statistics
+	if len(mStatistics) == 0 && discovery != nil {
+		if len(discovery.Statistics) > 0 {
+			mStatistics = discovery.Statistics
+		} else {
+			return fmt.Errorf("Metric [%s/%d] in %v: Statistics should not be empty", m.Name, metricIdx, parent)
+		}
 	}
+
 	mPeriod := m.Period
 	if mPeriod == 0 && discovery != nil {
 		if discovery.Period != 0 {
 			mPeriod = discovery.Period
 		} else {
-			mPeriod = 300
+			mPeriod = defaultPeriodSeconds
 		}
 	}
 	if mPeriod < 1 {
@@ -216,7 +233,7 @@ func (m *Metric) validateMetric(metricIdx int, parent string, discovery *Job) er
 		if discovery.Length != 0 {
 			mLength = discovery.Length
 		} else {
-			mLength = 120
+			mLength = defaultLengthSeconds
 		}
 	}
 
@@ -225,7 +242,7 @@ func (m *Metric) validateMetric(metricIdx int, parent string, discovery *Job) er
 		if discovery.Delay != 0 {
 			mDelay = discovery.Delay
 		} else {
-			mDelay = 120
+			mDelay = defaultDelaySeconds
 		}
 	}
 
@@ -257,6 +274,7 @@ func (m *Metric) validateMetric(metricIdx int, parent string, discovery *Job) er
 	m.Delay = mDelay
 	m.NilToZero = mNilToZero
 	m.AddCloudwatchTimestamp = mAddCloudwatchTimestamp
+	m.Statistics = mStatistics
 
 	return nil
 }
