@@ -11,7 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi/resourcegroupstaggingapiiface"
-	log "github.com/sirupsen/logrus"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 )
 
 // taggedResource is an AWS resource with tags
@@ -81,6 +82,7 @@ type tagsInterface struct {
 	asgClient        autoscalingiface.AutoScalingAPI
 	apiGatewayClient apigatewayiface.APIGatewayAPI
 	ec2Client        ec2iface.EC2API
+	logger           log.Logger
 }
 
 func (iface tagsInterface) get(job *Job, region string) ([]*taggedResource, error) {
@@ -100,7 +102,7 @@ func (iface tagsInterface) get(job *Job, region string) ([]*taggedResource, erro
 			resourceGroupTaggingAPICounter.Inc()
 
 			if len(page.ResourceTagMappingList) == 0 {
-				log.Errorf("Resource tag list is empty (in %s). Tags must be defined for %s to be discovered.", iface.account, job.Type)
+				level.Error(iface.logger).Log("msg", "Resource tag list is empty. Tags must be defined for resources to be discovered.", "account", iface.account, "job_type", job.Type, "region", region)
 			}
 
 			for _, resourceTagMapping := range page.ResourceTagMappingList {
@@ -117,7 +119,7 @@ func (iface tagsInterface) get(job *Job, region string) ([]*taggedResource, erro
 				if resource.filterThroughTags(job.SearchTags) {
 					resources = append(resources, &resource)
 				} else {
-					log.Debugf("Skipping resource %s because search tags do not match", resource.ARN)
+					level.Debug(iface.logger).Log("msg", "Skipping resource because search tags do not match", "arn", resource.ARN)
 				}
 			}
 			return pageNum < 100

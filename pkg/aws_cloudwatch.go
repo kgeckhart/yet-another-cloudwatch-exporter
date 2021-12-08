@@ -13,8 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/cloudwatch/cloudwatchiface"
-
-	log "github.com/sirupsen/logrus"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 )
 
 var percentile = regexp.MustCompile(`^p(\d{1,2}(\.\d{0,2})?|100)$`)
@@ -23,6 +23,7 @@ const timeFormat = "2006-01-02T15:04:05.999999-07:00"
 
 type cloudwatchInterface struct {
 	client cloudwatchiface.CloudWatchAPI
+	logger log.Logger
 }
 
 type cloudwatchData struct {
@@ -44,7 +45,7 @@ type cloudwatchData struct {
 	Period                  int64
 }
 
-func createGetMetricStatisticsInput(dimensions []*cloudwatch.Dimension, namespace *string, metric *Metric) (output *cloudwatch.GetMetricStatisticsInput) {
+func createGetMetricStatisticsInput(dimensions []*cloudwatch.Dimension, namespace *string, metric *Metric, logger log.Logger) (output *cloudwatch.GetMetricStatisticsInput) {
 	period := metric.Period
 	length := metric.Length
 	delay := metric.Delay
@@ -71,8 +72,7 @@ func createGetMetricStatisticsInput(dimensions []*cloudwatch.Dimension, namespac
 		Statistics:         statistics,
 		ExtendedStatistics: extendedStatistics,
 	}
-
-	log.Debug("CLI helper - " +
+	cmd := "CLI helper - " +
 		"aws cloudwatch get-metric-statistics" +
 		" --metric-name " + metric.Name +
 		" --dimensions " + dimensionsToCliString(dimensions) +
@@ -80,9 +80,10 @@ func createGetMetricStatisticsInput(dimensions []*cloudwatch.Dimension, namespac
 		" --statistics " + *statistics[0] +
 		" --period " + strconv.FormatInt(period, 10) +
 		" --start-time " + startTime.Format(time.RFC3339) +
-		" --end-time " + endTime.Format(time.RFC3339))
+		" --end-time " + endTime.Format(time.RFC3339)
+	level.Debug(logger).Log("msg", cmd)
 
-	log.Debug(*output)
+	level.Debug(logger).Log("msg", *output)
 	return output
 }
 
@@ -96,7 +97,7 @@ func findGetMetricDataById(getMetricDatas []cloudwatchData, value string) (cloud
 	return g, fmt.Errorf("Metric with id %s not found", value)
 }
 
-func createGetMetricDataInput(getMetricData []cloudwatchData, namespace *string, length int64, delay int64, configuredRoundingPeriod *int64) (output *cloudwatch.GetMetricDataInput) {
+func createGetMetricDataInput(getMetricData []cloudwatchData, namespace *string, length int64, delay int64, configuredRoundingPeriod *int64, logger log.Logger) (output *cloudwatch.GetMetricDataInput) {
 	var metricsDataQuery []*cloudwatch.MetricDataQuery
 	roundingPeriod := defaultPeriodSeconds
 	for _, data := range getMetricData {
@@ -129,8 +130,7 @@ func createGetMetricDataInput(getMetricData []cloudwatchData, namespace *string,
 		time.Duration(roundingPeriod)*time.Second,
 		time.Duration(length)*time.Second,
 		time.Duration(delay)*time.Second)
-	log.Debug("GetMetricData start time: ", startTime.Format(timeFormat))
-	log.Debug("GetMetricData end time: ", endTime.Format(timeFormat))
+	level.Debug(logger).Log("msg", "GetMetricDataInput", "start_time", startTime.Format(timeFormat), "end_time", endTime.Format(timeFormat))
 
 	dataPointOrder := "TimestampDescending"
 	output = &cloudwatch.GetMetricDataInput{
@@ -198,17 +198,17 @@ func dimensionsToCliString(dimensions []*cloudwatch.Dimension) (output string) {
 func (iface cloudwatchInterface) get(filter *cloudwatch.GetMetricStatisticsInput) []*cloudwatch.Datapoint {
 	c := iface.client
 
-	log.Debug(filter)
+	level.Debug(iface.logger).Log("msg", filter)
 
 	resp, err := c.GetMetricStatistics(filter)
 
-	log.Debug(resp)
+	level.Debug(iface.logger).Log("msg", resp)
 
 	cloudwatchAPICounter.Inc()
 	cloudwatchGetMetricStatisticsAPICounter.Inc()
 
 	if err != nil {
-		log.Warningf("Unable to get metric statistics due to %v", err)
+		level.Warn(iface.logger).Log("msg", "Unable to get metric statistics", "err", err)
 		return nil
 	}
 
@@ -220,9 +220,7 @@ func (iface cloudwatchInterface) getMetricData(filter *cloudwatch.GetMetricDataI
 
 	var resp cloudwatch.GetMetricDataOutput
 
-	if log.IsLevelEnabled(log.DebugLevel) {
-		log.Println(filter)
-	}
+	level.Debug(iface.logger).Log("msg", filter)
 
 	// Using the paged version of the function
 	err := c.GetMetricDataPages(filter,
@@ -233,12 +231,10 @@ func (iface cloudwatchInterface) getMetricData(filter *cloudwatch.GetMetricDataI
 			return !lastPage
 		})
 
-	if log.IsLevelEnabled(log.DebugLevel) {
-		log.Println(resp)
-	}
+	level.Debug(iface.logger).Log("msg", resp)
 
 	if err != nil {
-		log.Warningf("Unable to get metric data due to %v", err)
+		level.Warn(iface.logger).Log("msg", "Unable to get metric data", "err", err)
 		return nil
 	}
 	return &resp
@@ -403,9 +399,9 @@ func sortByTimestamp(datapoints []*cloudwatch.Datapoint) []*cloudwatch.Datapoint
 	return datapoints
 }
 
-func getDatapoint(cwd *cloudwatchData, statistic string) (*float64, time.Time) {
+func getDatapoint(cwd *cloudwatchData, statistic string) (*float64, time.Time, error) {
 	if cwd.GetMetricDataPoint != nil {
-		return cwd.GetMetricDataPoint, *cwd.GetMetricDataTimestamps
+		return cwd.GetMetricDataPoint, *cwd.GetMetricDataTimestamps, nil
 	}
 	var averageDataPoints []*cloudwatch.Datapoint
 
@@ -415,19 +411,19 @@ func getDatapoint(cwd *cloudwatchData, statistic string) (*float64, time.Time) {
 		switch {
 		case statistic == "Maximum":
 			if datapoint.Maximum != nil {
-				return datapoint.Maximum, *datapoint.Timestamp
+				return datapoint.Maximum, *datapoint.Timestamp, nil
 			}
 		case statistic == "Minimum":
 			if datapoint.Minimum != nil {
-				return datapoint.Minimum, *datapoint.Timestamp
+				return datapoint.Minimum, *datapoint.Timestamp, nil
 			}
 		case statistic == "Sum":
 			if datapoint.Sum != nil {
-				return datapoint.Sum, *datapoint.Timestamp
+				return datapoint.Sum, *datapoint.Timestamp, nil
 			}
 		case statistic == "SampleCount":
 			if datapoint.SampleCount != nil {
-				return datapoint.SampleCount, *datapoint.Timestamp
+				return datapoint.SampleCount, *datapoint.Timestamp, nil
 			}
 		case statistic == "Average":
 			if datapoint.Average != nil {
@@ -435,10 +431,10 @@ func getDatapoint(cwd *cloudwatchData, statistic string) (*float64, time.Time) {
 			}
 		case percentile.MatchString(statistic):
 			if data, ok := datapoint.ExtendedStatistics[statistic]; ok {
-				return data, *datapoint.Timestamp
+				return data, *datapoint.Timestamp, nil
 			}
 		default:
-			log.Fatal("Not implemented statistics: " + statistic)
+			return nil, time.Time{}, fmt.Errorf("invalid statistic requested on metric %s: %s", *cwd.Metric, statistic)
 		}
 	}
 
@@ -453,12 +449,12 @@ func getDatapoint(cwd *cloudwatchData, statistic string) (*float64, time.Time) {
 			total += *p.Average
 		}
 		average := total / float64(len(averageDataPoints))
-		return &average, timestamp
+		return &average, timestamp, nil
 	}
-	return nil, time.Time{}
+	return nil, time.Time{}, nil
 }
 
-func migrateCloudwatchToPrometheus(cwd []*cloudwatchData, labelsSnakeCase bool) []*PrometheusMetric {
+func migrateCloudwatchToPrometheus(cwd []*cloudwatchData, labelsSnakeCase bool) ([]*PrometheusMetric, error) {
 	output := make([]*PrometheusMetric, 0)
 
 	for _, c := range cwd {
@@ -467,7 +463,10 @@ func migrateCloudwatchToPrometheus(cwd []*cloudwatchData, labelsSnakeCase bool) 
 			if c.AddCloudwatchTimestamp != nil {
 				includeTimestamp = *c.AddCloudwatchTimestamp
 			}
-			exportedDatapoint, timestamp := getDatapoint(c, statistic)
+			exportedDatapoint, timestamp, err := getDatapoint(c, statistic)
+			if err != nil {
+				return nil, err
+			}
 			if exportedDatapoint == nil && (c.AddCloudwatchTimestamp == nil || !*c.AddCloudwatchTimestamp) {
 				var nan float64 = math.NaN()
 				exportedDatapoint = &nan
@@ -497,5 +496,5 @@ func migrateCloudwatchToPrometheus(cwd []*cloudwatchData, labelsSnakeCase bool) 
 		}
 	}
 
-	return output
+	return output, nil
 }

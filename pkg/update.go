@@ -1,8 +1,9 @@
 package exporter
 
 import (
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	log "github.com/sirupsen/logrus"
 )
 
 func UpdateMetrics(
@@ -12,6 +13,7 @@ func UpdateMetrics(
 	labelsSnakeCase bool,
 	cloudwatchSemaphore, tagSemaphore chan struct{},
 	cache SessionCache,
+	logger log.Logger,
 ) {
 	tagsData, cloudwatchData := scrapeAwsData(
 		config,
@@ -19,18 +21,29 @@ func UpdateMetrics(
 		cloudwatchSemaphore,
 		tagSemaphore,
 		cache,
+		logger,
 	)
-	var metrics []*PrometheusMetric
 
-	metrics = append(metrics, migrateCloudwatchToPrometheus(cloudwatchData, labelsSnakeCase)...)
+	promMetrics, err := migrateCloudwatchToPrometheus(cloudwatchData, labelsSnakeCase)
+	if err != nil {
+		level.Error(logger).Log("msg", "Error migrating cloudwatch metrics to prometheus metrics", "err", err)
+		return
+	}
+
+	var metrics []*PrometheusMetric
+	metrics = append(metrics, promMetrics...)
 	metrics = ensureLabelConsistencyForMetrics(metrics)
 
 	metrics = append(metrics, migrateTagsToPrometheus(tagsData, labelsSnakeCase)...)
 
-	registry.MustRegister(NewPrometheusCollector(metrics))
+	err = registry.Register(NewPrometheusCollector(metrics))
+	if err != nil {
+		level.Error(logger).Log("msg", "Failed to register exported metrics with prometheus", "err", err)
+		return
+	}
 	for _, counter := range []prometheus.Counter{cloudwatchAPICounter, cloudwatchAPIErrorCounter, cloudwatchGetMetricDataAPICounter, cloudwatchGetMetricStatisticsAPICounter, resourceGroupTaggingAPICounter, autoScalingAPICounter, apiGatewayAPICounter, targetGroupsAPICounter} {
 		if err := registry.Register(counter); err != nil {
-			log.Warning("Could not publish cloudwatch api metric")
+			level.Warn(logger).Log("msg", "Failed to register internal metric with prometheus", "err", err)
 		}
 	}
 }

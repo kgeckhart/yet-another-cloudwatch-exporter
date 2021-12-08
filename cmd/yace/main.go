@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-kit/kit/log/logrus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
@@ -206,7 +207,7 @@ func (s *scraper) scrape(ctx context.Context, cache exporter.SessionCache) {
 	defer sem.Release(1)
 
 	newRegistry := prometheus.NewRegistry()
-	exporter.UpdateMetrics(config, newRegistry, metricsPerQuery, labelsSnakeCase, s.cloudwatchSemaphore, s.tagSemaphore, cache)
+	exporter.UpdateMetrics(config, newRegistry, metricsPerQuery, labelsSnakeCase, s.cloudwatchSemaphore, s.tagSemaphore, cache, logrus.NewLogger(log.StandardLogger()))
 
 	// this might have a data race to access registry
 	s.registry = newRegistry
