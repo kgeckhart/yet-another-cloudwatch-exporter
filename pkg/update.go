@@ -2,7 +2,44 @@ package exporter
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
-	log "github.com/sirupsen/logrus"
+)
+
+var (
+	CloudwatchAPICounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "yace_cloudwatch_requests_total",
+		Help: "Help is not implemented yet.",
+	})
+	CloudwatchAPIErrorCounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "yace_cloudwatch_request_errors",
+		Help: "Help is not implemented yet.",
+	})
+	CloudwatchGetMetricDataAPICounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "yace_cloudwatch_getmetricdata_requests_total",
+		Help: "Help is not implemented yet.",
+	})
+	CloudwatchGetMetricStatisticsAPICounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "yace_cloudwatch_getmetricstatistics_requests_total",
+		Help: "Help is not implemented yet.",
+	})
+	ResourceGroupTaggingAPICounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "yace_cloudwatch_resourcegrouptaggingapi_requests_total",
+		Help: "Help is not implemented yet.",
+	})
+	AutoScalingAPICounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "yace_cloudwatch_autoscalingapi_requests_total",
+		Help: "Help is not implemented yet.",
+	})
+	TargetGroupsAPICounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "yace_cloudwatch_targetgroupapi_requests_total",
+		Help: "Help is not implemented yet.",
+	})
+	ApiGatewayAPICounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "yace_cloudwatch_apigatewayapi_requests_total",
+	})
+	Ec2APICounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "yace_cloudwatch_ec2api_requests_total",
+		Help: "Help is not implemented yet.",
+	})
 )
 
 func UpdateMetrics(
@@ -28,9 +65,4 @@ func UpdateMetrics(
 	metrics = append(metrics, migrateTagsToPrometheus(tagsData, labelsSnakeCase)...)
 
 	registry.MustRegister(NewPrometheusCollector(metrics))
-	for _, counter := range []prometheus.Counter{cloudwatchAPICounter, cloudwatchAPIErrorCounter, cloudwatchGetMetricDataAPICounter, cloudwatchGetMetricStatisticsAPICounter, resourceGroupTaggingAPICounter, autoScalingAPICounter, apiGatewayAPICounter, targetGroupsAPICounter} {
-		if err := registry.Register(counter); err != nil {
-			log.Warning("Could not publish cloudwatch api metric")
-		}
-	}
 }

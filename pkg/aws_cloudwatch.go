@@ -204,8 +204,8 @@ func (iface cloudwatchInterface) get(filter *cloudwatch.GetMetricStatisticsInput
 
 	log.Debug(resp)
 
-	cloudwatchAPICounter.Inc()
-	cloudwatchGetMetricStatisticsAPICounter.Inc()
+	CloudwatchAPICounter.Inc()
+	CloudwatchGetMetricStatisticsAPICounter.Inc()
 
 	if err != nil {
 		log.Warningf("Unable to get metric statistics due to %v", err)
@@ -227,8 +227,8 @@ func (iface cloudwatchInterface) getMetricData(filter *cloudwatch.GetMetricDataI
 	// Using the paged version of the function
 	err := c.GetMetricDataPages(filter,
 		func(page *cloudwatch.GetMetricDataOutput, lastPage bool) bool {
-			cloudwatchAPICounter.Inc()
-			cloudwatchGetMetricDataAPICounter.Inc()
+			CloudwatchAPICounter.Inc()
+			CloudwatchGetMetricDataAPICounter.Inc()
 			resp.MetricDataResults = append(resp.MetricDataResults, page.MetricDataResults...)
 			return !lastPage
 		})
@@ -266,10 +266,10 @@ func getFullMetricsList(namespace string, metric *Metric, clientCloudwatch cloud
 			return !lastPage
 		})
 	if err != nil {
-		cloudwatchAPIErrorCounter.Inc()
+		CloudwatchAPIErrorCounter.Inc()
 		return nil, err
 	}
-	cloudwatchAPICounter.Inc()
+	CloudwatchAPICounter.Inc()
 	return &res, nil
 }
 

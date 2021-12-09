@@ -9,44 +9,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var (
-	cloudwatchAPICounter = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "yace_cloudwatch_requests_total",
-		Help: "Help is not implemented yet.",
-	})
-	cloudwatchAPIErrorCounter = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "yace_cloudwatch_request_errors",
-		Help: "Help is not implemented yet.",
-	})
-	cloudwatchGetMetricDataAPICounter = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "yace_cloudwatch_getmetricdata_requests_total",
-		Help: "Help is not implemented yet.",
-	})
-	cloudwatchGetMetricStatisticsAPICounter = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "yace_cloudwatch_getmetricstatistics_requests_total",
-		Help: "Help is not implemented yet.",
-	})
-	resourceGroupTaggingAPICounter = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "yace_cloudwatch_resourcegrouptaggingapi_requests_total",
-		Help: "Help is not implemented yet.",
-	})
-	autoScalingAPICounter = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "yace_cloudwatch_autoscalingapi_requests_total",
-		Help: "Help is not implemented yet.",
-	})
-	targetGroupsAPICounter = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "yace_cloudwatch_targetgroupapi_requests_total",
-		Help: "Help is not implemented yet.",
-	})
-	apiGatewayAPICounter = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "yace_cloudwatch_apigatewayapi_requests_total",
-	})
-	ec2APICounter = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "yace_cloudwatch_ec2api_requests_total",
-		Help: "Help is not implemented yet.",
-	})
-)
-
 var replacer = strings.NewReplacer(
 	" ", "_",
 	",", "_",

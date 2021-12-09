@@ -97,7 +97,7 @@ func (iface tagsInterface) get(job *Job, region string) ([]*taggedResource, erro
 
 		err := c.GetResourcesPagesWithContext(ctx, inputparams, func(page *resourcegroupstaggingapi.GetResourcesOutput, lastPage bool) bool {
 			pageNum++
-			resourceGroupTaggingAPICounter.Inc()
+			ResourceGroupTaggingAPICounter.Inc()
 
 			if len(page.ResourceTagMappingList) == 0 {
 				log.Errorf("Resource tag list is empty (in %s). Tags must be defined for %s to be discovered.", iface.account, job.Type)

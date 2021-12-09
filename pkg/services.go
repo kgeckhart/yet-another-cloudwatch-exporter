@@ -68,7 +68,7 @@ var (
 			},
 			FilterFunc: func(iface tagsInterface, inputResources []*taggedResource) (outputResources []*taggedResource, err error) {
 				ctx := context.Background()
-				apiGatewayAPICounter.Inc()
+				ApiGatewayAPICounter.Inc()
 				var limit int64 = 500 // max number of results per page. default=25, max=500
 				const maxPages = 10
 				input := apigateway.GetRestApisInput{Limit: &limit}
@@ -129,7 +129,7 @@ var (
 				return resources, iface.asgClient.DescribeAutoScalingGroupsPagesWithContext(ctx, &autoscaling.DescribeAutoScalingGroupsInput{},
 					func(page *autoscaling.DescribeAutoScalingGroupsOutput, more bool) bool {
 						pageNum++
-						autoScalingAPICounter.Inc()
+						AutoScalingAPICounter.Inc()
 
 						for _, asg := range page.AutoScalingGroups {
 							resource := taggedResource{
@@ -265,7 +265,7 @@ var (
 				return resources, iface.ec2Client.DescribeSpotFleetRequestsPagesWithContext(ctx, &ec2.DescribeSpotFleetRequestsInput{},
 					func(page *ec2.DescribeSpotFleetRequestsOutput, more bool) bool {
 						pageNum++
-						ec2APICounter.Inc()
+						Ec2APICounter.Inc()
 
 						for _, ec2Spot := range page.SpotFleetRequestConfigs {
 							resource := taggedResource{
@@ -552,7 +552,7 @@ var (
 				return resources, iface.ec2Client.DescribeTransitGatewayAttachmentsPagesWithContext(ctx, &ec2.DescribeTransitGatewayAttachmentsInput{},
 					func(page *ec2.DescribeTransitGatewayAttachmentsOutput, more bool) bool {
 						pageNum++
-						ec2APICounter.Inc()
+						Ec2APICounter.Inc()
 
 						for _, tgwa := range page.TransitGatewayAttachments {
 							resource := taggedResource{

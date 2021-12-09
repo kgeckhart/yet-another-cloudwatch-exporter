@@ -206,6 +206,11 @@ func (s *scraper) scrape(ctx context.Context, cache exporter.SessionCache) {
 	defer sem.Release(1)
 
 	newRegistry := prometheus.NewRegistry()
+	for _, counter := range []prometheus.Counter{exporter.CloudwatchAPICounter, exporter.CloudwatchAPIErrorCounter, exporter.CloudwatchGetMetricDataAPICounter, exporter.CloudwatchGetMetricStatisticsAPICounter, exporter.ResourceGroupTaggingAPICounter, exporter.AutoScalingAPICounter, exporter.ApiGatewayAPICounter, exporter.TargetGroupsAPICounter} {
+		if err := newRegistry.Register(counter); err != nil {
+			log.Warning("Could not register cloudwatch api metric")
+		}
+	}
 	exporter.UpdateMetrics(config, newRegistry, metricsPerQuery, labelsSnakeCase, s.cloudwatchSemaphore, s.tagSemaphore, cache)
 
 	// this might have a data race to access registry
