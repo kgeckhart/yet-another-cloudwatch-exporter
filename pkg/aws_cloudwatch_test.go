@@ -298,17 +298,25 @@ func Test_ensureLabelConsistencyForMetrics(t *testing.T) {
 		value:  &value2,
 	}
 
-	metrics := []*PrometheusMetric{&metric1, &metric2}
-	result := ensureLabelConsistencyForMetrics(metrics)
+	value3 := 2.0
+	metric3 := PrometheusMetric{
+		name:   aws.String("metric1"),
+		labels: map[string]string{},
+		value:  &value3,
+	}
 
+	metrics := []*PrometheusMetric{&metric1, &metric2, &metric3}
+	result := ensureLabelConsistencyForMetrics(metrics, map[string]LabelSet{"metric1" : {"label1" : struct{}{}, "label2": struct{}{}, "label3": struct{}{}}})
+
+	expected := []string{"label1", "label2", "label3"}
 	for _, metric := range result {
-		assert.Equal(t, 2, len(metric.labels))
+		assert.Equal(t, len(expected), len(metric.labels))
 		labels := []string{}
 		for labelName := range metric.labels {
 			labels = append(labels, labelName)
 		}
 
-		assert.ElementsMatch(t, []string{"label1", "label2"}, labels)
+		assert.ElementsMatch(t, expected, labels)
 	}
 }
 

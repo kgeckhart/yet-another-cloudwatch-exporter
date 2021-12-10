@@ -360,39 +360,32 @@ func createPrometheusLabels(cwd *cloudwatchData, labelsSnakeCase bool) map[strin
 	return labels
 }
 
-func ensureLabelConsistencyForMetrics(metrics []*PrometheusMetric) []*PrometheusMetric {
-	labelSetForMetric := make(map[string]map[string]bool, len(metrics))
-	for _, metric := range metrics {
-		if _, ok := labelSetForMetric[*metric.name]; !ok {
-			labelSetForMetric[*metric.name] = make(map[string]bool)
-		}
-
-		for label := range metric.labels {
-			if _, ok := labelSetForMetric[*metric.name][label]; !ok {
-				labelSetForMetric[*metric.name][label] = true
-			}
+// recordLabelsForMetric adds any missing labels from promLabels in to the LabelSet for the metric name and returns
+// the updated observedMetricLabels
+func recordLabelsForMetric(metricName string, promLabels map[string]string, observedMetricLabels map[string]LabelSet) map[string]LabelSet {
+	if _, ok := observedMetricLabels[metricName]; !ok {
+		observedMetricLabels[metricName] = make(LabelSet)
+	}
+	for label := range promLabels {
+		if _, ok := observedMetricLabels[metricName][label]; !ok {
+			observedMetricLabels[metricName][label] = struct{}{}
 		}
 	}
 
-	var updatedMetrics []*PrometheusMetric
+	return observedMetricLabels
+}
 
+// ensureLabelConsistencyForMetrics ensures that every metric has the same set of labels based on the data
+// in observedMetricLabels. Prometheus requires that all metrics with the same name have the same set of labels
+func ensureLabelConsistencyForMetrics(metrics []*PrometheusMetric, observedMetricLabels map[string]LabelSet) []*PrometheusMetric {
 	for _, prometheusMetric := range metrics {
-		metricName := prometheusMetric.name
-		metricLabels := prometheusMetric.labels
-
-		consistentMetricLabels := make(map[string]string)
-
-		for recordedLabel := range labelSetForMetric[*metricName] {
-			if value, ok := metricLabels[recordedLabel]; ok {
-				consistentMetricLabels[recordedLabel] = value
-			} else {
-				consistentMetricLabels[recordedLabel] = ""
+		for observedLabel := range observedMetricLabels[*prometheusMetric.name] {
+			if _, ok := prometheusMetric.labels[observedLabel]; !ok {
+				prometheusMetric.labels[observedLabel] = ""
 			}
 		}
-		prometheusMetric.labels = consistentMetricLabels
-		updatedMetrics = append(updatedMetrics, prometheusMetric)
 	}
-	return updatedMetrics
+	return metrics
 }
 
 func sortByTimestamp(datapoints []*cloudwatch.Datapoint) []*cloudwatch.Datapoint {
@@ -458,7 +451,7 @@ func getDatapoint(cwd *cloudwatchData, statistic string) (*float64, time.Time) {
 	return nil, time.Time{}
 }
 
-func migrateCloudwatchToPrometheus(cwd []*cloudwatchData, labelsSnakeCase bool) []*PrometheusMetric {
+func migrateCloudwatchToPrometheus(cwd []*cloudwatchData, labelsSnakeCase bool, observedMetricLabels map[string]LabelSet) ([]*PrometheusMetric, map[string]LabelSet) {
 	output := make([]*PrometheusMetric, 0)
 
 	for _, c := range cwd {
@@ -483,8 +476,8 @@ func migrateCloudwatchToPrometheus(cwd []*cloudwatchData, labelsSnakeCase bool) 
 			}
 			name := promString(promNs) + "_" + strings.ToLower(promString(*c.Metric)) + "_" + strings.ToLower(promString(statistic))
 			if exportedDatapoint != nil {
-
 				promLabels := createPrometheusLabels(c, labelsSnakeCase)
+				observedMetricLabels = recordLabelsForMetric(name, promLabels, observedMetricLabels)
 				p := PrometheusMetric{
 					name:             &name,
 					labels:           promLabels,
@@ -497,5 +490,5 @@ func migrateCloudwatchToPrometheus(cwd []*cloudwatchData, labelsSnakeCase bool) 
 		}
 	}
 
-	return output
+	return output, observedMetricLabels
 }

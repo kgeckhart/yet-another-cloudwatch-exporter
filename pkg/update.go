@@ -5,6 +5,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+type LabelSet map[string]struct{}
+
 func UpdateMetrics(
 	config ScrapeConf,
 	registry *prometheus.Registry,
@@ -12,6 +14,7 @@ func UpdateMetrics(
 	labelsSnakeCase bool,
 	cloudwatchSemaphore, tagSemaphore chan struct{},
 	cache SessionCache,
+	observedMetricLabels map[string]LabelSet,
 ) {
 	tagsData, cloudwatchData := scrapeAwsData(
 		config,
@@ -20,10 +23,8 @@ func UpdateMetrics(
 		tagSemaphore,
 		cache,
 	)
-	var metrics []*PrometheusMetric
-
-	metrics = append(metrics, migrateCloudwatchToPrometheus(cloudwatchData, labelsSnakeCase)...)
-	metrics = ensureLabelConsistencyForMetrics(metrics)
+	metrics, observedMetricLabels := migrateCloudwatchToPrometheus(cloudwatchData, labelsSnakeCase, observedMetricLabels)
+	metrics = ensureLabelConsistencyForMetrics(metrics, observedMetricLabels)
 
 	metrics = append(metrics, migrateTagsToPrometheus(tagsData, labelsSnakeCase)...)
 

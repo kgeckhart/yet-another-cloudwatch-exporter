@@ -206,7 +206,10 @@ func (s *scraper) scrape(ctx context.Context, cache exporter.SessionCache) {
 	defer sem.Release(1)
 
 	newRegistry := prometheus.NewRegistry()
-	exporter.UpdateMetrics(config, newRegistry, metricsPerQuery, labelsSnakeCase, s.cloudwatchSemaphore, s.tagSemaphore, cache)
+	// The tracking of metric -> LabelSet needs to be scoped the same way as the registry. Since we create a new
+	// registry every scrape we don't need to track observed labels from scrape to scrape.
+	observedMetricLabels := map[string]exporter.LabelSet{}
+	exporter.UpdateMetrics(config, newRegistry, metricsPerQuery, labelsSnakeCase, s.cloudwatchSemaphore, s.tagSemaphore, cache, observedMetricLabels)
 
 	// this might have a data race to access registry
 	s.registry = newRegistry
