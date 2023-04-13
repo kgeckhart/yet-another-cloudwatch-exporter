@@ -3,6 +3,7 @@ package exporter
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
@@ -139,6 +140,7 @@ func UpdateMetrics(
 	cloudwatchDataReceiver := make(chan []*model.CloudwatchData, options.cloudWatchAPIConcurrency)
 	taggedResourcesReceiver := make(chan []*model.TaggedResource, options.taggingAPIConcurrency)
 	go func() {
+		logger.Info("Starting aws scraping")
 		job.ScrapeAwsData(
 			ctx,
 			logger,
@@ -153,52 +155,69 @@ func UpdateMetrics(
 
 		close(cloudwatchDataReceiver)
 		close(taggedResourcesReceiver)
+		logger.Info("Finished aws scraping")
 	}()
 
 	// TODO buffered or unbuffered here?
-	metricsReceiver := make(chan *promutil.PrometheusMetric, 100)
-	done := make(chan struct{})
+	cloudWatchMetricsReceiver := make(chan *promutil.PrometheusMetric, 100)
+	buildInfoMetricsReceiver := make(chan *promutil.PrometheusMetric, 100)
+
 	var g errgroup.Group
 	g.Go(func() error {
-		err := promutil.BuildMetrics(cloudwatchDataReceiver, done, options.labelsSnakeCase, logger, metricsReceiver)
-		if err != nil {
-			// Shut it down early
-			done <- struct{}{}
-			return err
-		}
-		return nil
+		logger.Info("Starting cloudwatch migration")
+		err := promutil.BuildMetrics(cloudwatchDataReceiver, options.labelsSnakeCase, logger, cloudWatchMetricsReceiver)
+		//TODO figure out how to shutdown early on error here
+		logger.Info("Finished cloudwatch migration")
+		close(cloudWatchMetricsReceiver)
+		return err
 	})
 	g.Go(func() error {
-		promutil.BuildNamespaceInfoMetrics(taggedResourcesReceiver, done, options.labelsSnakeCase, logger, metricsReceiver)
+		logger.Info("Starting tag data migration")
+		promutil.BuildNamespaceInfoMetrics(taggedResourcesReceiver, options.labelsSnakeCase, logger, buildInfoMetricsReceiver)
+		logger.Info("Finished tag data migration")
+		close(buildInfoMetricsReceiver)
 		return nil
 	})
+	mux := &sync.Mutex{}
 	var metrics []*promutil.PrometheusMetric
 	g.Go(func() error {
-		for {
-			select {
-			case received := <-metricsReceiver:
-				metrics = append(metrics, received)
-				if _, exists := observedMetricLabels[*received.Name]; !exists {
-					observedMetricLabels[*received.Name] = make(model.LabelSet)
-				}
-				for key := range received.Labels {
-					if _, exists := observedMetricLabels[*received.Name][key]; !exists {
-						observedMetricLabels[*received.Name][key] = struct{}{}
-					}
-				}
-			case <-done:
-				return nil
-			}
+		for received := range cloudWatchMetricsReceiver {
+			mux.Lock()
+			metrics = append(metrics, received)
+			addObservedLabelsFromMetric(received, observedMetricLabels)
+			mux.Unlock()
 		}
+		return nil
+	})
+	g.Go(func() error {
+		for received := range buildInfoMetricsReceiver {
+			mux.Lock()
+			metrics = append(metrics, received)
+			addObservedLabelsFromMetric(received, observedMetricLabels)
+			mux.Unlock()
+		}
+		return nil
 	})
 	if err := g.Wait(); err != nil {
 		logger.Error(err, "Error migrating cloudwatch data to prometheus metrics")
 		return nil
 	}
+	logger.Info("Metric accumulation finished")
 
 	metrics = promutil.EnsureLabelConsistencyForMetrics(metrics, observedMetricLabels)
 
 	registry.MustRegister(promutil.NewPrometheusCollector(metrics))
 
 	return nil
+}
+
+func addObservedLabelsFromMetric(received *promutil.PrometheusMetric, observedMetricLabels map[string]model.LabelSet) {
+	if _, exists := observedMetricLabels[*received.Name]; !exists {
+		observedMetricLabels[*received.Name] = make(model.LabelSet)
+	}
+	for key := range received.Labels {
+		if _, exists := observedMetricLabels[*received.Name][key]; !exists {
+			observedMetricLabels[*received.Name][key] = struct{}{}
+		}
+	}
 }

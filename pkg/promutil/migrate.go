@@ -19,108 +19,99 @@ var Percentile = regexp.MustCompile(`^p(\d{1,2}(\.\d{0,2})?|100)$`)
 
 func BuildNamespaceInfoMetrics(
 	taggedResourceReceiver <-chan []*model.TaggedResource,
-	done <-chan struct{},
 	labelsSnakeCase bool,
 	logger logging.Logger,
 	metricReceiver chan<- *PrometheusMetric,
 ) {
-	for {
-		select {
-		case tagData := <-taggedResourceReceiver:
-			for _, d := range tagData {
-				sb := strings.Builder{}
-				promNs := PromString(d.Namespace)
+	for tagData := range taggedResourceReceiver {
+		logger.Info("Received resource data")
+		for _, d := range tagData {
+			sb := strings.Builder{}
+			promNs := PromString(d.Namespace)
 
-				if !strings.HasPrefix(promNs, "aws") {
-					sb.WriteString("aws_")
-				}
-				sb.WriteString(promNs)
-				sb.WriteString("_info")
-				name := sb.String()
-
-				promLabels := make(map[string]string, len(d.Tags)+1)
-				promLabels["name"] = d.ARN
-
-				for _, tag := range d.Tags {
-					ok, promTag := PromStringTag(tag.Key, labelsSnakeCase)
-					if !ok {
-						logger.Warn("tag name is an invalid prometheus label name", "tag", tag.Key)
-						continue
-					}
-
-					labelKey := "tag_" + promTag
-					promLabels[labelKey] = ""
-					promLabels[labelKey] = tag.Value
-				}
-
-				metricReceiver <- &PrometheusMetric{
-					Name:   &name,
-					Labels: promLabels,
-					Value:  aws.Float64(0),
-				}
+			if !strings.HasPrefix(promNs, "aws") {
+				sb.WriteString("aws_")
 			}
-		case <-done:
-			return
+			sb.WriteString(promNs)
+			sb.WriteString("_info")
+			name := sb.String()
+
+			promLabels := make(map[string]string, len(d.Tags)+1)
+			promLabels["name"] = d.ARN
+
+			for _, tag := range d.Tags {
+				ok, promTag := PromStringTag(tag.Key, labelsSnakeCase)
+				if !ok {
+					logger.Warn("tag name is an invalid prometheus label name", "tag", tag.Key)
+					continue
+				}
+
+				labelKey := "tag_" + promTag
+				promLabels[labelKey] = ""
+				promLabels[labelKey] = tag.Value
+			}
+
+			metricReceiver <- &PrometheusMetric{
+				Name:   &name,
+				Labels: promLabels,
+				Value:  aws.Float64(0),
+			}
 		}
 	}
 }
 
 func BuildMetrics(
 	cloudwatchDataReceiver <-chan []*model.CloudwatchData,
-	done <-chan struct{},
 	labelsSnakeCase bool,
 	logger logging.Logger,
 	metricsReceiver chan<- *PrometheusMetric,
 ) error {
-	for {
-		select {
-		case receivedData := <-cloudwatchDataReceiver:
-			for _, c := range receivedData {
-				for _, statistic := range c.Statistics {
-					var includeTimestamp bool
-					if c.AddCloudwatchTimestamp != nil {
-						includeTimestamp = *c.AddCloudwatchTimestamp
+	for receivedData := range cloudwatchDataReceiver {
+		logger.Info("Received cloudwatch data")
+		for _, c := range receivedData {
+			for _, statistic := range c.Statistics {
+				var includeTimestamp bool
+				if c.AddCloudwatchTimestamp != nil {
+					includeTimestamp = *c.AddCloudwatchTimestamp
+				}
+				exportedDatapoint, timestamp, err := getDatapoint(c, statistic)
+				if err != nil {
+					return err
+				}
+				if exportedDatapoint == nil && (c.AddCloudwatchTimestamp == nil || !*c.AddCloudwatchTimestamp) {
+					exportedDatapoint = aws.Float64(math.NaN())
+					includeTimestamp = false
+					if *c.NilToZero {
+						exportedDatapoint = aws.Float64(0)
 					}
-					exportedDatapoint, timestamp, err := getDatapoint(c, statistic)
-					if err != nil {
-						return err
-					}
-					if exportedDatapoint == nil && (c.AddCloudwatchTimestamp == nil || !*c.AddCloudwatchTimestamp) {
-						exportedDatapoint = aws.Float64(math.NaN())
-						includeTimestamp = false
-						if *c.NilToZero {
-							exportedDatapoint = aws.Float64(0)
-						}
-					}
+				}
 
-					sb := strings.Builder{}
-					promNs := PromString(*c.Namespace)
-					if !strings.HasPrefix(promNs, "aws") {
-						sb.WriteString("aws_")
-					}
-					sb.WriteString(PromString(promNs))
-					sb.WriteString("_")
-					sb.WriteString(PromString(*c.Metric))
-					sb.WriteString("_")
-					sb.WriteString(PromString(statistic))
-					name := sb.String()
+				sb := strings.Builder{}
+				promNs := PromString(*c.Namespace)
+				if !strings.HasPrefix(promNs, "aws") {
+					sb.WriteString("aws_")
+				}
+				sb.WriteString(PromString(promNs))
+				sb.WriteString("_")
+				sb.WriteString(PromString(*c.Metric))
+				sb.WriteString("_")
+				sb.WriteString(PromString(statistic))
+				name := sb.String()
 
-					if exportedDatapoint != nil {
-						promLabels := createPrometheusLabels(c, labelsSnakeCase, logger)
-						metricsReceiver <- &PrometheusMetric{
-							Name:             &name,
-							Labels:           promLabels,
-							Value:            exportedDatapoint,
-							Timestamp:        timestamp,
-							IncludeTimestamp: includeTimestamp,
-						}
+				if exportedDatapoint != nil {
+					promLabels := createPrometheusLabels(c, labelsSnakeCase, logger)
+					metricsReceiver <- &PrometheusMetric{
+						Name:             &name,
+						Labels:           promLabels,
+						Value:            exportedDatapoint,
+						Timestamp:        timestamp,
+						IncludeTimestamp: includeTimestamp,
 					}
 				}
 			}
-		case <-done:
-			return nil
 		}
 	}
+	return nil
 }
 
 func getDatapoint(cwd *model.CloudwatchData, statistic string) (*float64, time.Time, error) {
