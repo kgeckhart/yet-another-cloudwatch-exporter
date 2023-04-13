@@ -22,7 +22,8 @@ func runStaticJob(
 	job *config.Static,
 	account *string,
 	cloudwatchAPIConcurrency int,
-) []*model.CloudwatchData {
+	cloudWatchData chan<- []*model.CloudwatchData,
+) {
 	clientCloudwatch := apicloudwatch.NewLimitedConcurrencyClient(
 		apicloudwatch.NewClient(
 			logger,
@@ -31,11 +32,11 @@ func runStaticJob(
 		cloudwatchAPIConcurrency,
 	)
 
-	return scrapeStaticJob(ctx, job, region, account, clientCloudwatch, logger)
+	scrapeStaticJob(ctx, job, region, account, clientCloudwatch, logger, cloudWatchData)
 }
 
-func scrapeStaticJob(ctx context.Context, resource *config.Static, region string, accountID *string, clientCloudwatch apicloudwatch.CloudWatchClient, logger logging.Logger) []*model.CloudwatchData {
-	cw := []*model.CloudwatchData{}
+func scrapeStaticJob(ctx context.Context, resource *config.Static, region string, accountID *string, clientCloudwatch apicloudwatch.CloudWatchClient, logger logging.Logger, cloudWatchData chan<- []*model.CloudwatchData) {
+	cw := make([]*model.CloudwatchData, 0, len(resource.Metrics))
 	mux := &sync.Mutex{}
 	var wg sync.WaitGroup
 
@@ -76,7 +77,7 @@ func scrapeStaticJob(ctx context.Context, resource *config.Static, region string
 		}()
 	}
 	wg.Wait()
-	return cw
+	cloudWatchData <- cw
 }
 
 func createStaticDimensions(dimensions []config.Dimension) []*cloudwatch.Dimension {

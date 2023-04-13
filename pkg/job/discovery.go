@@ -31,7 +31,9 @@ func runDiscoveryJob(
 	exportedTags model.ExportedTagsOnMetrics,
 	taggingAPIConcurrency int,
 	cloudwatchAPIConcurrency int,
-) ([]*model.TaggedResource, []*model.CloudwatchData) {
+	cloudWatchData chan<- []*model.CloudwatchData,
+	taggedResources chan<- []*model.TaggedResource,
+) {
 	clientCloudwatch := apicloudwatch.NewLimitedConcurrencyClient(
 		apicloudwatch.NewClient(
 			logger,
@@ -53,7 +55,7 @@ func runDiscoveryJob(
 		),
 		taggingAPIConcurrency)
 
-	return scrapeDiscoveryJobUsingMetricData(ctx, job, region, account, exportedTags, clientTag, clientCloudwatch, metricsPerQuery, job.RoundingPeriod, logger)
+	scrapeDiscoveryJobUsingMetricData(ctx, job, region, account, exportedTags, clientTag, clientCloudwatch, metricsPerQuery, job.RoundingPeriod, logger, taggedResources, cloudWatchData)
 }
 
 func scrapeDiscoveryJobUsingMetricData(
@@ -67,10 +69,10 @@ func scrapeDiscoveryJobUsingMetricData(
 	metricsPerQuery int,
 	roundingPeriod *int64,
 	logger logging.Logger,
-) ([]*model.TaggedResource, []*model.CloudwatchData) {
+	taggedResources chan<- []*model.TaggedResource,
+	cloudWatchData chan<- []*model.CloudwatchData,
+) {
 	logger.Debug("Get tagged resources")
-
-	cw := []*model.CloudwatchData{}
 
 	resources, err := clientTag.GetResources(ctx, job, region)
 	if err != nil {
@@ -79,7 +81,7 @@ func scrapeDiscoveryJobUsingMetricData(
 		} else {
 			logger.Error(err, "Couldn't describe resources")
 		}
-		return resources, cw
+		return
 	}
 
 	svc := config.SupportedServices.GetService(job.Type)
@@ -87,14 +89,15 @@ func scrapeDiscoveryJobUsingMetricData(
 	metricDataLength := len(getMetricDatas)
 	if metricDataLength == 0 {
 		logger.Info("No metrics data found")
-		return resources, cw
+		return
 	}
+
+	taggedResources <- resources
 
 	maxMetricCount := metricsPerQuery
 	length := getMetricDataInputLength(job.Metrics)
 	partition := int(math.Ceil(float64(metricDataLength) / float64(maxMetricCount)))
 
-	mux := &sync.Mutex{}
 	var wg sync.WaitGroup
 	wg.Add(partition)
 
@@ -120,15 +123,12 @@ func scrapeDiscoveryJobUsingMetricData(
 						output = append(output, getMetricData)
 					}
 				}
-				mux.Lock()
-				cw = append(cw, output...)
-				mux.Unlock()
+				cloudWatchData <- output
 			}
 		}(i)
 	}
 
 	wg.Wait()
-	return resources, cw
 }
 
 func getMetricDataInputLength(metrics []*config.Metric) int64 {

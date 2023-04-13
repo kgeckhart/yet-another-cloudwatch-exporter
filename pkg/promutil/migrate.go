@@ -17,116 +17,110 @@ import (
 
 var Percentile = regexp.MustCompile(`^p(\d{1,2}(\.\d{0,2})?|100)$`)
 
-func BuildNamespaceInfoMetrics(tagData []*model.TaggedResource, labelsSnakeCase bool, logger logging.Logger) []*PrometheusMetric {
-	output := make([]*PrometheusMetric, 0, len(tagData))
+func BuildNamespaceInfoMetrics(
+	taggedResourceReceiver <-chan []*model.TaggedResource,
+	done <-chan struct{},
+	labelsSnakeCase bool,
+	logger logging.Logger,
+	metricReceiver chan<- *PrometheusMetric,
+) {
+	for {
+		select {
+		case tagData := <-taggedResourceReceiver:
+			for _, d := range tagData {
+				sb := strings.Builder{}
+				promNs := PromString(d.Namespace)
 
-	tagList := make(map[string][]string)
+				if !strings.HasPrefix(promNs, "aws") {
+					sb.WriteString("aws_")
+				}
+				sb.WriteString(promNs)
+				sb.WriteString("_info")
+				name := sb.String()
 
-	for _, d := range tagData {
-		for _, entry := range d.Tags {
-			if !stringInSlice(entry.Key, tagList[d.Namespace]) {
-				tagList[d.Namespace] = append(tagList[d.Namespace], entry.Key)
-			}
-		}
-	}
+				promLabels := make(map[string]string, len(d.Tags)+1)
+				promLabels["name"] = d.ARN
 
-	for _, d := range tagData {
-		sb := strings.Builder{}
-		promNs := PromString(d.Namespace)
-		if !strings.HasPrefix(promNs, "aws") {
-			sb.WriteString("aws_")
-		}
-		sb.WriteString(promNs)
-		sb.WriteString("_info")
-		name := sb.String()
+				for _, tag := range d.Tags {
+					ok, promTag := PromStringTag(tag.Key, labelsSnakeCase)
+					if !ok {
+						logger.Warn("tag name is an invalid prometheus label name", "tag", tag.Key)
+						continue
+					}
 
-		promLabels := make(map[string]string, len(tagList[d.Namespace]))
-		promLabels["name"] = d.ARN
+					labelKey := "tag_" + promTag
+					promLabels[labelKey] = ""
+					promLabels[labelKey] = tag.Value
+				}
 
-		for _, entry := range tagList[d.Namespace] {
-			ok, promTag := PromStringTag(entry, labelsSnakeCase)
-			if !ok {
-				logger.Warn("tag name is an invalid prometheus label name", "tag", entry)
-				continue
-			}
-
-			labelKey := "tag_" + promTag
-			promLabels[labelKey] = ""
-
-			for _, rTag := range d.Tags {
-				if entry == rTag.Key {
-					promLabels[labelKey] = rTag.Value
+				metricReceiver <- &PrometheusMetric{
+					Name:   &name,
+					Labels: promLabels,
+					Value:  aws.Float64(0),
 				}
 			}
-		}
-
-		output = append(output, &PrometheusMetric{
-			Name:   &name,
-			Labels: promLabels,
-			Value:  aws.Float64(0),
-		})
-	}
-
-	return output
-}
-
-func stringInSlice(str string, list []string) bool {
-	for _, v := range list {
-		if v == str {
-			return true
+		case <-done:
+			return
 		}
 	}
-	return false
 }
 
-func BuildMetrics(cwd []*model.CloudwatchData, labelsSnakeCase bool, observedMetricLabels map[string]model.LabelSet, logger logging.Logger) ([]*PrometheusMetric, map[string]model.LabelSet, error) {
-	output := make([]*PrometheusMetric, 0)
+func BuildMetrics(
+	cloudwatchDataReceiver <-chan []*model.CloudwatchData,
+	done <-chan struct{},
+	labelsSnakeCase bool,
+	logger logging.Logger,
+	metricsReceiver chan<- *PrometheusMetric,
+) error {
+	for {
+		select {
+		case receivedData := <-cloudwatchDataReceiver:
+			for _, c := range receivedData {
+				for _, statistic := range c.Statistics {
+					var includeTimestamp bool
+					if c.AddCloudwatchTimestamp != nil {
+						includeTimestamp = *c.AddCloudwatchTimestamp
+					}
+					exportedDatapoint, timestamp, err := getDatapoint(c, statistic)
+					if err != nil {
+						return err
+					}
+					if exportedDatapoint == nil && (c.AddCloudwatchTimestamp == nil || !*c.AddCloudwatchTimestamp) {
+						exportedDatapoint = aws.Float64(math.NaN())
+						includeTimestamp = false
+						if *c.NilToZero {
+							exportedDatapoint = aws.Float64(0)
+						}
+					}
 
-	for _, c := range cwd {
-		for _, statistic := range c.Statistics {
-			var includeTimestamp bool
-			if c.AddCloudwatchTimestamp != nil {
-				includeTimestamp = *c.AddCloudwatchTimestamp
-			}
-			exportedDatapoint, timestamp, err := getDatapoint(c, statistic)
-			if err != nil {
-				return nil, nil, err
-			}
-			if exportedDatapoint == nil && (c.AddCloudwatchTimestamp == nil || !*c.AddCloudwatchTimestamp) {
-				exportedDatapoint = aws.Float64(math.NaN())
-				includeTimestamp = false
-				if *c.NilToZero {
-					exportedDatapoint = aws.Float64(0)
+					sb := strings.Builder{}
+					promNs := PromString(*c.Namespace)
+					if !strings.HasPrefix(promNs, "aws") {
+						sb.WriteString("aws_")
+					}
+					sb.WriteString(PromString(promNs))
+					sb.WriteString("_")
+					sb.WriteString(PromString(*c.Metric))
+					sb.WriteString("_")
+					sb.WriteString(PromString(statistic))
+					name := sb.String()
+
+					if exportedDatapoint != nil {
+						promLabels := createPrometheusLabels(c, labelsSnakeCase, logger)
+						metricsReceiver <- &PrometheusMetric{
+							Name:             &name,
+							Labels:           promLabels,
+							Value:            exportedDatapoint,
+							Timestamp:        timestamp,
+							IncludeTimestamp: includeTimestamp,
+						}
+					}
 				}
 			}
-
-			sb := strings.Builder{}
-			promNs := PromString(*c.Namespace)
-			if !strings.HasPrefix(promNs, "aws") {
-				sb.WriteString("aws_")
-			}
-			sb.WriteString(PromString(promNs))
-			sb.WriteString("_")
-			sb.WriteString(PromString(*c.Metric))
-			sb.WriteString("_")
-			sb.WriteString(PromString(statistic))
-			name := sb.String()
-
-			if exportedDatapoint != nil {
-				promLabels := createPrometheusLabels(c, labelsSnakeCase, logger)
-				observedMetricLabels = recordLabelsForMetric(name, promLabels, observedMetricLabels)
-				output = append(output, &PrometheusMetric{
-					Name:             &name,
-					Labels:           promLabels,
-					Value:            exportedDatapoint,
-					Timestamp:        timestamp,
-					IncludeTimestamp: includeTimestamp,
-				})
-			}
+		case <-done:
+			return nil
 		}
 	}
-
-	return output, observedMetricLabels, nil
 }
 
 func getDatapoint(cwd *model.CloudwatchData, statistic string) (*float64, time.Time, error) {
@@ -227,21 +221,6 @@ func createPrometheusLabels(cwd *model.CloudwatchData, labelsSnakeCase bool, log
 	}
 
 	return labels
-}
-
-// recordLabelsForMetric adds any missing labels from promLabels in to the LabelSet for the metric name and returns
-// the updated observedMetricLabels
-func recordLabelsForMetric(metricName string, promLabels map[string]string, observedMetricLabels map[string]model.LabelSet) map[string]model.LabelSet {
-	if _, ok := observedMetricLabels[metricName]; !ok {
-		observedMetricLabels[metricName] = make(model.LabelSet)
-	}
-	for label := range promLabels {
-		if _, ok := observedMetricLabels[metricName][label]; !ok {
-			observedMetricLabels[metricName][label] = struct{}{}
-		}
-	}
-
-	return observedMetricLabels
 }
 
 // EnsureLabelConsistencyForMetrics ensures that every metric has the same set of labels based on the data

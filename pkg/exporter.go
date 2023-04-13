@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/config"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/job"
@@ -135,25 +136,67 @@ func UpdateMetrics(
 
 	// add feature flags to context passed down to all other layers
 	ctx = config.CtxWithFlags(ctx, options.featureFlags)
+	cloudwatchDataReceiver := make(chan []*model.CloudwatchData, options.cloudWatchAPIConcurrency)
+	taggedResourcesReceiver := make(chan []*model.TaggedResource, options.taggingAPIConcurrency)
+	go func() {
+		job.ScrapeAwsData(
+			ctx,
+			logger,
+			cfg,
+			cache,
+			options.metricsPerQuery,
+			options.cloudWatchAPIConcurrency,
+			options.taggingAPIConcurrency,
+			cloudwatchDataReceiver,
+			taggedResourcesReceiver,
+		)
 
-	tagsData, cloudwatchData := job.ScrapeAwsData(
-		ctx,
-		logger,
-		cfg,
-		cache,
-		options.metricsPerQuery,
-		options.cloudWatchAPIConcurrency,
-		options.taggingAPIConcurrency,
-	)
+		close(cloudwatchDataReceiver)
+		close(taggedResourcesReceiver)
+	}()
 
-	metrics, observedMetricLabels, err := promutil.BuildMetrics(cloudwatchData, options.labelsSnakeCase, observedMetricLabels, logger)
-	if err != nil {
-		logger.Error(err, "Error migrating cloudwatch metrics to prometheus metrics")
+	// TODO buffered or unbuffered here?
+	metricsReceiver := make(chan *promutil.PrometheusMetric, 100)
+	done := make(chan struct{})
+	var g errgroup.Group
+	g.Go(func() error {
+		err := promutil.BuildMetrics(cloudwatchDataReceiver, done, options.labelsSnakeCase, logger, metricsReceiver)
+		if err != nil {
+			// Shut it down early
+			done <- struct{}{}
+			return err
+		}
+		return nil
+	})
+	g.Go(func() error {
+		promutil.BuildNamespaceInfoMetrics(taggedResourcesReceiver, done, options.labelsSnakeCase, logger, metricsReceiver)
+		return nil
+	})
+	var metrics []*promutil.PrometheusMetric
+	g.Go(func() error {
+		for {
+			select {
+			case received := <-metricsReceiver:
+				metrics = append(metrics, received)
+				if _, exists := observedMetricLabels[*received.Name]; !exists {
+					observedMetricLabels[*received.Name] = make(model.LabelSet)
+				}
+				for key := range received.Labels {
+					if _, exists := observedMetricLabels[*received.Name][key]; !exists {
+						observedMetricLabels[*received.Name][key] = struct{}{}
+					}
+				}
+			case <-done:
+				return nil
+			}
+		}
+	})
+	if err := g.Wait(); err != nil {
+		logger.Error(err, "Error migrating cloudwatch data to prometheus metrics")
 		return nil
 	}
-	metrics = promutil.EnsureLabelConsistencyForMetrics(metrics, observedMetricLabels)
 
-	metrics = append(metrics, promutil.BuildNamespaceInfoMetrics(tagsData, options.labelsSnakeCase, logger)...)
+	metrics = promutil.EnsureLabelConsistencyForMetrics(metrics, observedMetricLabels)
 
 	registry.MustRegister(promutil.NewPrometheusCollector(metrics))
 

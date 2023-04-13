@@ -20,10 +20,9 @@ func ScrapeAwsData(
 	metricsPerQuery int,
 	cloudWatchAPIConcurrency int,
 	taggingAPIConcurrency int,
-) ([]*model.TaggedResource, []*model.CloudwatchData) {
-	mux := &sync.Mutex{}
-	cwData := make([]*model.CloudwatchData, 0)
-	awsInfoData := make([]*model.TaggedResource, 0)
+	cloudWatchData chan<- []*model.CloudwatchData,
+	taggedResources chan<- []*model.TaggedResource,
+) {
 	var wg sync.WaitGroup
 
 	// since we have called refresh, we have loaded all the credentials
@@ -46,13 +45,7 @@ func ScrapeAwsData(
 					}
 					jobLogger = jobLogger.With("account", *result.Account)
 
-					resources, metrics := runDiscoveryJob(ctx, jobLogger, cache, metricsPerQuery, discoveryJob, region, role, result.Account, cfg.Discovery.ExportedTagsOnMetrics, taggingAPIConcurrency, cloudWatchAPIConcurrency)
-					if len(metrics) != 0 {
-						mux.Lock()
-						awsInfoData = append(awsInfoData, resources...)
-						cwData = append(cwData, metrics...)
-						mux.Unlock()
-					}
+					runDiscoveryJob(ctx, jobLogger, cache, metricsPerQuery, discoveryJob, region, role, result.Account, cfg.Discovery.ExportedTagsOnMetrics, taggingAPIConcurrency, cloudWatchAPIConcurrency, cloudWatchData, taggedResources)
 				}(discoveryJob, region, role)
 			}
 		}
@@ -72,11 +65,7 @@ func ScrapeAwsData(
 					}
 					jobLogger = jobLogger.With("account", *result.Account)
 
-					metrics := runStaticJob(ctx, jobLogger, cache, region, role, staticJob, result.Account, cloudWatchAPIConcurrency)
-
-					mux.Lock()
-					cwData = append(cwData, metrics...)
-					mux.Unlock()
+					runStaticJob(ctx, jobLogger, cache, region, role, staticJob, result.Account, cloudWatchAPIConcurrency, cloudWatchData)
 				}(staticJob, region, role)
 			}
 		}
@@ -98,15 +87,10 @@ func ScrapeAwsData(
 					}
 					jobLogger = jobLogger.With("account", *result.Account)
 
-					metrics := runCustomNamespaceJob(ctx, jobLogger, cache, metricsPerQuery, customNamespaceJob, region, role, result.Account, cloudWatchAPIConcurrency)
-
-					mux.Lock()
-					cwData = append(cwData, metrics...)
-					mux.Unlock()
+					runCustomNamespaceJob(ctx, jobLogger, cache, metricsPerQuery, customNamespaceJob, region, role, result.Account, cloudWatchAPIConcurrency, cloudWatchData)
 				}(customNamespaceJob, region, role)
 			}
 		}
 	}
 	wg.Wait()
-	return awsInfoData, cwData
 }

@@ -24,7 +24,8 @@ func runCustomNamespaceJob(
 	role config.Role,
 	account *string,
 	cloudwatchAPIConcurrency int,
-) []*model.CloudwatchData {
+	cloudWatchData chan<- []*model.CloudwatchData,
+) {
 	clientCloudwatch := apicloudwatch.NewLimitedConcurrencyClient(
 		apicloudwatch.NewClient(
 			logger,
@@ -33,7 +34,7 @@ func runCustomNamespaceJob(
 		cloudwatchAPIConcurrency,
 	)
 
-	return scrapeCustomNamespaceJobUsingMetricData(
+	scrapeCustomNamespaceJobUsingMetricData(
 		ctx,
 		job,
 		region,
@@ -41,6 +42,7 @@ func runCustomNamespaceJob(
 		clientCloudwatch,
 		logger,
 		metricsPerQuery,
+		cloudWatchData,
 	)
 }
 
@@ -52,17 +54,15 @@ func scrapeCustomNamespaceJobUsingMetricData(
 	clientCloudwatch apicloudwatch.CloudWatchClient,
 	logger logging.Logger,
 	metricsPerQuery int,
-) []*model.CloudwatchData {
-	cw := []*model.CloudwatchData{}
-
-	mux := &sync.Mutex{}
+	cloudWatchData chan<- []*model.CloudwatchData,
+) {
 	var wg sync.WaitGroup
 
 	getMetricDatas := getMetricDataForQueriesForCustomNamespace(ctx, job, region, accountID, clientCloudwatch, logger)
 	metricDataLength := len(getMetricDatas)
 	if metricDataLength == 0 {
 		logger.Debug("No metrics data found")
-		return cw
+		return
 	}
 
 	maxMetricCount := metricsPerQuery
@@ -94,15 +94,12 @@ func scrapeCustomNamespaceJobUsingMetricData(
 						output = append(output, getMetricData)
 					}
 				}
-				mux.Lock()
-				cw = append(cw, output...)
-				mux.Unlock()
+				cloudWatchData <- output
 			}
 		}(i)
 	}
 
 	wg.Wait()
-	return cw
 }
 
 func getMetricDataForQueriesForCustomNamespace(
