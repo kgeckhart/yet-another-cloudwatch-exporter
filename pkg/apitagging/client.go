@@ -5,15 +5,14 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/apigateway/apigatewayiface"
-	"github.com/aws/aws-sdk-go/service/autoscaling/autoscalingiface"
-	"github.com/aws/aws-sdk-go/service/databasemigrationservice/databasemigrationserviceiface"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/prometheusservice/prometheusserviceiface"
-	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
-	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi/resourcegroupstaggingapiiface"
-	"github.com/aws/aws-sdk-go/service/storagegateway/storagegatewayiface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/amp"
+	"github.com/aws/aws-sdk-go-v2/service/apigateway"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
+	"github.com/aws/aws-sdk-go-v2/service/databasemigrationservice"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
+	"github.com/aws/aws-sdk-go-v2/service/storagegateway"
 
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/config"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/logging"
@@ -31,24 +30,24 @@ var ErrExpectedToFindResources = errors.New("expected to discover resources but 
 
 type Client struct {
 	logger            logging.Logger
-	taggingAPI        resourcegroupstaggingapiiface.ResourceGroupsTaggingAPIAPI
-	autoscalingAPI    autoscalingiface.AutoScalingAPI
-	apiGatewayAPI     apigatewayiface.APIGatewayAPI
-	ec2API            ec2iface.EC2API
-	dmsAPI            databasemigrationserviceiface.DatabaseMigrationServiceAPI
-	prometheusSvcAPI  prometheusserviceiface.PrometheusServiceAPI
-	storageGatewayAPI storagegatewayiface.StorageGatewayAPI
+	taggingAPI        *resourcegroupstaggingapi.Client
+	autoscalingAPI    *autoscaling.Client
+	apiGatewayAPI     *apigateway.Client
+	ec2API            *ec2.Client
+	dmsAPI            *databasemigrationservice.Client
+	prometheusSvcAPI  *amp.Client
+	storageGatewayAPI *storagegateway.Client
 }
 
 func NewClient(
 	logger logging.Logger,
-	taggingAPI resourcegroupstaggingapiiface.ResourceGroupsTaggingAPIAPI,
-	autoscalingAPI autoscalingiface.AutoScalingAPI,
-	apiGatewayAPI apigatewayiface.APIGatewayAPI,
-	ec2API ec2iface.EC2API,
-	dmsClient databasemigrationserviceiface.DatabaseMigrationServiceAPI,
-	prometheusClient prometheusserviceiface.PrometheusServiceAPI,
-	storageGatewayAPI storagegatewayiface.StorageGatewayAPI,
+	taggingAPI *resourcegroupstaggingapi.Client,
+	autoscalingAPI *autoscaling.Client,
+	apiGatewayAPI *apigateway.Client,
+	ec2API *ec2.Client,
+	dmsClient *databasemigrationservice.Client,
+	prometheusClient *amp.Client,
+	storageGatewayAPI *storagegateway.Client,
 ) *Client {
 	return &Client{
 		logger:            logger,
@@ -71,17 +70,20 @@ func (c Client) GetResources(ctx context.Context, job *config.Job, region string
 		shouldHaveDiscoveredResources = true
 		inputparams := &resourcegroupstaggingapi.GetResourcesInput{
 			ResourceTypeFilters: svc.ResourceFilters,
-			ResourcesPerPage:    aws.Int64(100), // max allowed value according to API docs
+			ResourcesPerPage:    aws.Int32(int32(100)), // max allowed value according to API docs
 		}
-		pageNum := 0
 
-		err := c.taggingAPI.GetResourcesPagesWithContext(ctx, inputparams, func(page *resourcegroupstaggingapi.GetResourcesOutput, lastPage bool) bool {
-			pageNum++
+		paginator := resourcegroupstaggingapi.NewGetResourcesPaginator(c.taggingAPI, inputparams)
+		for paginator.HasMorePages() {
 			promutil.ResourceGroupTaggingAPICounter.Inc()
+			page, err := paginator.NextPage(ctx)
+			if err != nil {
+				return nil, err
+			}
 
 			for _, resourceTagMapping := range page.ResourceTagMappingList {
 				resource := model.TaggedResource{
-					ARN:       aws.StringValue(resourceTagMapping.ResourceARN),
+					ARN:       *resourceTagMapping.ResourceARN,
 					Namespace: job.Type,
 					Region:    region,
 					Tags:      make([]model.Tag, 0, len(resourceTagMapping.Tags)),
@@ -97,10 +99,6 @@ func (c Client) GetResources(ctx context.Context, job *config.Job, region string
 					c.logger.Debug("Skipping resource because search tags do not match", "arn", resource.ARN)
 				}
 			}
-			return !lastPage
-		})
-		if err != nil {
-			return nil, err
 		}
 
 		c.logger.Debug("GetResourcesPages finished", "total", len(resources))

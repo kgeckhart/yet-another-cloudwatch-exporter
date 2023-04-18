@@ -191,7 +191,10 @@ func startScraper(c *cli.Context) error {
 	featureFlags := c.StringSlice(enableFeatureFlag)
 
 	s := NewScraper(featureFlags)
-	cache := session.NewSessionCache(cfg, fips, logger)
+	cache, err := session.NewAwsClientCache(cfg, fips, logger)
+	if err != nil {
+		return fmt.Errorf("failed to create client cache: %w", err)
+	}
 
 	ctx, cancelRunningScrape := context.WithCancel(context.Background())
 	go s.decoupled(ctx, logger, cache)
@@ -234,7 +237,10 @@ func startScraper(c *cli.Context) error {
 		}
 
 		logger.Info("Reset session cache")
-		cache = session.NewSessionCache(cfg, fips, logger)
+		cache, err := session.NewAwsClientCache(cfg, fips, logger)
+		if err != nil {
+			logger.Error(err, "failed to reload config due to error creating aws client cache")
+		}
 
 		cancelRunningScrape()
 		ctx, cancelRunningScrape = context.WithCancel(context.Background())

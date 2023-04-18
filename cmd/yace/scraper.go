@@ -34,13 +34,15 @@ func (s *scraper) makeHandler() func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-func (s *scraper) decoupled(ctx context.Context, logger logging.Logger, cache session.SessionCache) {
+func (s *scraper) decoupled(ctx context.Context, logger logging.Logger, cache session.AWSClientCache) {
 	logger.Debug("Starting scraping async")
+	start := time.Now()
 	s.scrape(ctx, logger, cache)
+	scrapeTime := time.Since(start)
 
 	scrapingDuration := time.Duration(scrapingInterval) * time.Second
 	ticker := time.NewTicker(scrapingDuration)
-	logger.Debug("Initial scrape completed", "scraping_interval", scrapingInterval)
+	logger.Info("Initial scrape completed", "scraping_interval", scrapingInterval, "scrape_time", scrapeTime)
 	defer ticker.Stop()
 	for {
 		select {
@@ -53,7 +55,7 @@ func (s *scraper) decoupled(ctx context.Context, logger logging.Logger, cache se
 	}
 }
 
-func (s *scraper) scrape(ctx context.Context, logger logging.Logger, cache session.SessionCache) {
+func (s *scraper) scrape(ctx context.Context, logger logging.Logger, cache session.AWSClientCache) {
 	if !sem.TryAcquire(1) {
 		// This shouldn't happen under normal use, users should adjust their configuration when this occurs.
 		// Let them know by logging a warning.
@@ -70,6 +72,7 @@ func (s *scraper) scrape(ctx context.Context, logger logging.Logger, cache sessi
 		}
 	}
 
+	start := time.Now()
 	err := exporter.UpdateMetrics(
 		ctx,
 		logger,
@@ -82,9 +85,11 @@ func (s *scraper) scrape(ctx context.Context, logger logging.Logger, cache sessi
 		exporter.TaggingAPIConcurrency(tagConcurrency),
 		exporter.EnableFeatureFlag(s.featureFlags...),
 	)
+	scrapeTime := time.Since(start)
 	if err != nil {
 		logger.Error(err, "error updating metrics")
 	}
+	logger.Info("Scrape completed", "scrape_time", scrapeTime)
 
 	// this might have a data race to access registry
 	s.registry = newRegistry

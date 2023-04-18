@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/apicloudwatch"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/config"
@@ -16,7 +16,7 @@ import (
 func runStaticJob(
 	ctx context.Context,
 	logger logging.Logger,
-	cache session.SessionCache,
+	cache session.AWSClientCache,
 	region string,
 	role config.Role,
 	job *config.Static,
@@ -79,11 +79,11 @@ func scrapeStaticJob(ctx context.Context, resource *config.Static, region string
 	return cw
 }
 
-func createStaticDimensions(dimensions []config.Dimension) []*cloudwatch.Dimension {
-	out := make([]*cloudwatch.Dimension, 0, len(dimensions))
+func createStaticDimensions(dimensions []config.Dimension) []types.Dimension {
+	out := make([]types.Dimension, 0, len(dimensions))
 	for _, d := range dimensions {
 		d := d
-		out = append(out, &cloudwatch.Dimension{
+		out = append(out, types.Dimension{
 			Name:  &d.Name,
 			Value: &d.Value,
 		})

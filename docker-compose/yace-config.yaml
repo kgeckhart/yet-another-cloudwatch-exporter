@@ -2,26 +2,81 @@ apiVersion: v1alpha1
 sts-region: us-east-1
 discovery:
   jobs:
-    - type: AWS/ECS
-      regions: [us-east-1]
-      period: 300
-      length: 300
-      metrics:
-        - name: CPUReservation
-          statistics:
-            - Average
-        - name: MemoryReservation
-          statistics:
-            - Average
-        - name: CPUUtilization
-          statistics:
-            - Average
-        - name: MemoryUtilization
-          statistics:
-            - Average
     - type: AWS/EC2
-      regions: [us-east-1]
+      regions: [us-east-2]
       metrics:
         - name: CPUUtilization
+          statistics:
+            - Average
+            - Maximum
+        - name: NetworkIn
+          statistics:
+            - Average
+            - Sum
+        - name: NetworkOut
+          statistics:
+            - Average
+            - Sum
+        - name: NetworkPacketsIn
+          statistics:
+            - Sum
+        - name: NetworkPacketsOut
+          statistics:
+            - Sum
+        - name: DiskReadBytes
+          statistics:
+            - Sum
+        - name: DiskWriteBytes
+          statistics:
+            - Sum
+        - name: DiskReadOps
+          statistics:
+            - Sum
+        - name: DiskWriteOps
+          statistics:
+            - Sum
+        - name: StatusCheckFailed
+          statistics:
+            - Sum
+        - name: StatusCheckFailed_Instance
+          statistics:
+            - Sum
+        - name: StatusCheckFailed_System
+          statistics:
+            - Sum
+    - type: AWS/EBS
+      regions: [us-east-2]
+      metrics:
+        - name: VolumeReadBytes
+          statistics:
+            - Sum
+        - name: VolumeWriteBytes
+          statistics:
+            - Sum
+        - name: VolumeReadOps
+          statistics:
+            - Average
+        - name: VolumeWriteOps
+          statistics:
+            - Average
+        - name: VolumeTotalReadTime
+          statistics:
+            - Average
+        - name: VolumeTotalWriteTime
+          statistics:
+            - Average
+        - name: VolumeIdleTime
+          statistics:
+            - Average
+        - name: VolumeQueueLength
+          statistics:
+            - Average
+        - name: VolumeThroughputPercentage
+          statistics:
+            - Average
+        - name: VolumeConsumedReadWriteOps
+          statistics:
+            - Average
+        - name: BurstBalance
           statistics:
             - Average

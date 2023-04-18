@@ -17,7 +17,7 @@ import (
 func runCustomNamespaceJob(
 	ctx context.Context,
 	logger logging.Logger,
-	cache session.SessionCache,
+	cache session.AWSClientCache,
 	metricsPerQuery int,
 	job *config.CustomNamespace,
 	region string,
@@ -84,12 +84,12 @@ func scrapeCustomNamespaceJobUsingMetricData(
 			data := clientCloudwatch.GetMetricData(ctx, filter)
 			if data != nil {
 				output := make([]*model.CloudwatchData, 0)
-				for _, MetricDataResult := range data.MetricDataResults {
-					getMetricData, err := findGetMetricDataByIDForCustomNamespace(input, *MetricDataResult.Id)
+				for _, metricDataResult := range data.MetricDataResults {
+					getMetricData, err := findGetMetricDataByIDForCustomNamespace(input, *metricDataResult.Id)
 					if err == nil {
-						if len(MetricDataResult.Values) != 0 {
-							getMetricData.GetMetricDataPoint = MetricDataResult.Values[0]
-							getMetricData.GetMetricDataTimestamps = MetricDataResult.Timestamps[0]
+						if len(metricDataResult.Values) != 0 {
+							getMetricData.GetMetricDataPoint = &metricDataResult.Values[0]
+							getMetricData.GetMetricDataTimestamps = &metricDataResult.Timestamps[0]
 						}
 						output = append(output, getMetricData)
 					}

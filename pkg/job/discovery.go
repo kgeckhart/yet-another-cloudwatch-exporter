@@ -8,7 +8,8 @@ import (
 	"math/rand"
 	"sync"
 
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/grafana/regexp"
 
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/apicloudwatch"
@@ -22,7 +23,7 @@ import (
 func runDiscoveryJob(
 	ctx context.Context,
 	logger logging.Logger,
-	cache session.SessionCache,
+	cache session.AWSClientCache,
 	metricsPerQuery int,
 	job *config.Job,
 	region string,
@@ -132,8 +133,8 @@ func scrapeDiscoveryJobUsingMetricData(
 				continue
 			}
 			if len(metricDataResult.Values) != 0 {
-				getMetricDatas[idx].GetMetricDataPoint = metricDataResult.Values[0]
-				getMetricDatas[idx].GetMetricDataTimestamps = metricDataResult.Timestamps[0]
+				getMetricDatas[idx].GetMetricDataPoint = &metricDataResult.Values[0]
+				getMetricDatas[idx].GetMetricDataTimestamps = &metricDataResult.Timestamps[0]
 			}
 			getMetricDatas[idx].MetricID = nil // mark as processed
 		}
@@ -225,7 +226,7 @@ func getFilteredMetricDatas(
 	tagsOnMetrics model.ExportedTagsOnMetrics,
 	dimensionRegexps []*regexp.Regexp,
 	resources []*model.TaggedResource,
-	metricsList []*cloudwatch.Metric,
+	metricsList []types.Metric,
 	dimensionNameList []string,
 	m *config.Metric,
 ) []*model.CloudwatchData {
@@ -276,7 +277,7 @@ func getFilteredMetricDatas(
 	return getMetricsData
 }
 
-func metricDimensionsMatchNames(metric *cloudwatch.Metric, dimensionNameRequirements []string) bool {
+func metricDimensionsMatchNames(metric types.Metric, dimensionNameRequirements []string) bool {
 	if len(dimensionNameRequirements) != len(metric.Dimensions) {
 		return false
 	}

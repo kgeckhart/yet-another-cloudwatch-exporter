@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/config"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/logging"
@@ -16,7 +16,7 @@ func ScrapeAwsData(
 	ctx context.Context,
 	logger logging.Logger,
 	cfg config.ScrapeConf,
-	cache session.SessionCache,
+	cache session.AWSClientCache,
 	metricsPerQuery int,
 	cloudWatchAPIConcurrency int,
 	taggingAPIConcurrency int,
@@ -39,7 +39,7 @@ func ScrapeAwsData(
 				go func(discoveryJob *config.Job, region string, role config.Role) {
 					defer wg.Done()
 					jobLogger := logger.With("job_type", discoveryJob.Type, "region", region, "arn", role.RoleArn)
-					result, err := cache.GetSTS(role).GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+					result, err := cache.GetSTS(region, role).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 					if err != nil || result.Account == nil {
 						jobLogger.Error(err, "Couldn't get account Id")
 						return
@@ -65,7 +65,7 @@ func ScrapeAwsData(
 				go func(staticJob *config.Static, region string, role config.Role) {
 					defer wg.Done()
 					jobLogger := logger.With("static_job_name", staticJob.Name, "region", region, "arn", role.RoleArn)
-					result, err := cache.GetSTS(role).GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+					result, err := cache.GetSTS(region, role).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 					if err != nil || result.Account == nil {
 						jobLogger.Error(err, "Couldn't get account Id")
 						return
@@ -91,7 +91,7 @@ func ScrapeAwsData(
 				go func(customNamespaceJob *config.CustomNamespace, region string, role config.Role) {
 					defer wg.Done()
 					jobLogger := logger.With("custom_metric_namespace", customNamespaceJob.Namespace, "region", region, "arn", role.RoleArn)
-					result, err := cache.GetSTS(role).GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+					result, err := cache.GetSTS(region, role).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 					if err != nil || result.Account == nil {
 						jobLogger.Error(err, "Couldn't get account Id")
 						return

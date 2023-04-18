@@ -5,8 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/config"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/logging"
@@ -27,22 +28,22 @@ func (tc TimeClock) Now() time.Time {
 }
 
 func CreateGetMetricDataInput(getMetricData []*model.CloudwatchData, namespace *string, length int64, delay int64, configuredRoundingPeriod *int64, logger logging.Logger) *cloudwatch.GetMetricDataInput {
-	metricsDataQuery := make([]*cloudwatch.MetricDataQuery, 0, len(getMetricData))
+	metricsDataQuery := make([]types.MetricDataQuery, 0, len(getMetricData))
 	roundingPeriod := model.DefaultPeriodSeconds
 	for _, data := range getMetricData {
 		if data.Period < roundingPeriod {
 			roundingPeriod = data.Period
 		}
-		metricStat := &cloudwatch.MetricStat{
-			Metric: &cloudwatch.Metric{
+		metricStat := &types.MetricStat{
+			Metric: &types.Metric{
 				Dimensions: data.Dimensions,
 				MetricName: data.Metric,
 				Namespace:  namespace,
 			},
-			Period: &data.Period,
+			Period: aws.Int32(int32(data.Period)),
 			Stat:   &data.Statistics[0],
 		}
-		metricsDataQuery = append(metricsDataQuery, &cloudwatch.MetricDataQuery{
+		metricsDataQuery = append(metricsDataQuery, types.MetricDataQuery{
 			Id:         data.MetricID,
 			MetricStat: metricStat,
 			ReturnData: aws.Bool(true),
@@ -67,7 +68,7 @@ func CreateGetMetricDataInput(getMetricData []*model.CloudwatchData, namespace *
 		EndTime:           &endTime,
 		StartTime:         &startTime,
 		MetricDataQueries: metricsDataQuery,
-		ScanBy:            aws.String("TimestampDescending"),
+		ScanBy:            "TimestampDescending",
 	}
 }
 
@@ -87,20 +88,20 @@ func determineGetMetricDataWindow(clock Clock, roundingPeriod time.Duration, len
 	return startTime, endTime
 }
 
-func CreateGetMetricStatisticsInput(dimensions []*cloudwatch.Dimension, namespace *string, metric *config.Metric, logger logging.Logger) *cloudwatch.GetMetricStatisticsInput {
+func CreateGetMetricStatisticsInput(dimensions []types.Dimension, namespace *string, metric *config.Metric, logger logging.Logger) *cloudwatch.GetMetricStatisticsInput {
 	period := metric.Period
 	length := metric.Length
 	delay := metric.Delay
 	endTime := time.Now().Add(-time.Duration(delay) * time.Second)
 	startTime := time.Now().Add(-(time.Duration(length) + time.Duration(delay)) * time.Second)
 
-	var statistics []*string
-	var extendedStatistics []*string
+	var statistics []types.Statistic
+	var extendedStatistics []string
 	for _, statistic := range metric.Statistics {
 		if promutil.Percentile.MatchString(statistic) {
-			extendedStatistics = append(extendedStatistics, aws.String(statistic))
+			extendedStatistics = append(extendedStatistics, statistic)
 		} else {
-			statistics = append(statistics, aws.String(statistic))
+			statistics = append(statistics, types.Statistic(statistic))
 		}
 	}
 
@@ -109,7 +110,7 @@ func CreateGetMetricStatisticsInput(dimensions []*cloudwatch.Dimension, namespac
 		Namespace:          namespace,
 		StartTime:          &startTime,
 		EndTime:            &endTime,
-		Period:             &period,
+		Period:             aws.Int32(int32(period)),
 		MetricName:         &metric.Name,
 		Statistics:         statistics,
 		ExtendedStatistics: extendedStatistics,
@@ -121,7 +122,7 @@ func CreateGetMetricStatisticsInput(dimensions []*cloudwatch.Dimension, namespac
 			" --metric-name " + metric.Name +
 			" --dimensions " + dimensionsToCliString(dimensions) +
 			" --namespace " + *namespace +
-			" --statistics " + *statistics[0] +
+			" --statistics " + string(statistics[0]) +
 			" --period " + strconv.FormatInt(period, 10) +
 			" --start-time " + startTime.Format(time.RFC3339) +
 			" --end-time " + endTime.Format(time.RFC3339))
@@ -132,7 +133,7 @@ func CreateGetMetricStatisticsInput(dimensions []*cloudwatch.Dimension, namespac
 	return output
 }
 
-func dimensionsToCliString(dimensions []*cloudwatch.Dimension) string {
+func dimensionsToCliString(dimensions []types.Dimension) string {
 	out := strings.Builder{}
 	for _, dim := range dimensions {
 		out.WriteString("Name=")

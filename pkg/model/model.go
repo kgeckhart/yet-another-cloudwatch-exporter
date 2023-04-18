@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/grafana/regexp"
 )
 
@@ -30,17 +30,18 @@ type CloudwatchData struct {
 	Metric                  *string
 	Namespace               *string
 	Statistics              []string
-	Points                  []*cloudwatch.Datapoint
+	Points                  []*types.Datapoint
 	GetMetricDataPoint      *float64
 	GetMetricDataTimestamps *time.Time
 	NilToZero               *bool
 	AddCloudwatchTimestamp  *bool
 	CustomTags              []Tag
 	Tags                    []Tag
-	Dimensions              []*cloudwatch.Dimension
-	Region                  *string
-	AccountID               *string
-	Period                  int64
+	// TODO maybe a pointer?
+	Dimensions []types.Dimension
+	Region     *string
+	AccountID  *string
+	Period     int64
 }
 
 // TaggedResource is an AWS resource with tags

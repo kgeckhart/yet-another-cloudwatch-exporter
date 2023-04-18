@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/grafana/regexp"
 	prom_model "github.com/prometheus/common/model"
 
@@ -109,7 +109,7 @@ func getDatapoint(cwd *model.CloudwatchData, statistic string) (*float64, time.T
 	if cwd.GetMetricDataPoint != nil {
 		return cwd.GetMetricDataPoint, *cwd.GetMetricDataTimestamps, nil
 	}
-	var averageDataPoints []*cloudwatch.Datapoint
+	var averageDataPoints []*types.Datapoint
 
 	// sorting by timestamps so we can consistently export the most updated datapoint
 	// assuming Timestamp field in cloudwatch.Datapoint struct is never nil
@@ -137,7 +137,7 @@ func getDatapoint(cwd *model.CloudwatchData, statistic string) (*float64, time.T
 			}
 		case Percentile.MatchString(statistic):
 			if data, ok := datapoint.ExtendedStatistics[statistic]; ok {
-				return data, *datapoint.Timestamp, nil
+				return &data, *datapoint.Timestamp, nil
 			}
 		default:
 			return nil, time.Time{}, fmt.Errorf("invalid statistic requested on metric %s: %s", *cwd.Metric, statistic)
@@ -160,7 +160,7 @@ func getDatapoint(cwd *model.CloudwatchData, statistic string) (*float64, time.T
 	return nil, time.Time{}, nil
 }
 
-func sortByTimestamp(datapoints []*cloudwatch.Datapoint) []*cloudwatch.Datapoint {
+func sortByTimestamp(datapoints []*types.Datapoint) []*types.Datapoint {
 	sort.Slice(datapoints, func(i, j int) bool {
 		jTimestamp := *datapoints[j].Timestamp
 		return datapoints[i].Timestamp.After(jTimestamp)

@@ -1,14 +1,13 @@
 package config
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/grafana/regexp"
 )
 
 type ServiceConfig struct {
 	Namespace        string
 	Alias            string
-	ResourceFilters  []*string
+	ResourceFilters  []string
 	DimensionRegexps []*regexp.Regexp
 }
 
@@ -27,15 +26,15 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/CertificateManager",
 		Alias:     "acm",
-		ResourceFilters: []*string{
-			aws.String("acm:certificate"),
+		ResourceFilters: []string{
+			"acm:certificate",
 		},
 	},
 	{
 		Namespace: "AWS/ACMPrivateCA",
 		Alias:     "acm-pca",
-		ResourceFilters: []*string{
-			aws.String("acm-pca:certificate-authority"),
+		ResourceFilters: []string{
+			"acm-pca:certificate-authority",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("(?P<PrivateCAArn>.*)"),
@@ -44,23 +43,23 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AmazonMWAA",
 		Alias:     "airflow",
-		ResourceFilters: []*string{
-			aws.String("airflow"),
+		ResourceFilters: []string{
+			"airflow",
 		},
 	},
 	{
 		Namespace: "AWS/MWAA",
 		Alias:     "mwaa",
-		ResourceFilters: []*string{
-			aws.String("mwaa"),
+		ResourceFilters: []string{
+			"mwaa",
 		},
 	},
 	{
 		Namespace: "AWS/ApplicationELB",
 		Alias:     "alb",
-		ResourceFilters: []*string{
-			aws.String("elasticloadbalancing:loadbalancer/app"),
-			aws.String("elasticloadbalancing:targetgroup"),
+		ResourceFilters: []string{
+			"elasticloadbalancing:loadbalancer/app",
+			"elasticloadbalancing:targetgroup",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":(?P<TargetGroup>targetgroup/.+)"),
@@ -70,8 +69,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/AppStream",
 		Alias:     "appstream",
-		ResourceFilters: []*string{
-			aws.String("appstream"),
+		ResourceFilters: []string{
+			"appstream",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":fleet/(?P<FleetName>[^/]+)"),
@@ -80,15 +79,15 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/Backup",
 		Alias:     "backup",
-		ResourceFilters: []*string{
-			aws.String("backup"),
+		ResourceFilters: []string{
+			"backup",
 		},
 	},
 	{
 		Namespace: "AWS/ApiGateway",
 		Alias:     "apigateway",
-		ResourceFilters: []*string{
-			aws.String("apigateway"),
+		ResourceFilters: []string{
+			"apigateway",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("apis/(?P<ApiName>[^/]+)$"),
@@ -98,8 +97,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/AmazonMQ",
 		Alias:     "mq",
-		ResourceFilters: []*string{
-			aws.String("mq"),
+		ResourceFilters: []string{
+			"mq",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("broker:(?P<Broker>[^:]+)"),
@@ -108,8 +107,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/AppSync",
 		Alias:     "appsync",
-		ResourceFilters: []*string{
-			aws.String("appsync"),
+		ResourceFilters: []string{
+			"appsync",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("apis/(?P<GraphQLAPIId>[^/]+)"),
@@ -118,8 +117,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/Athena",
 		Alias:     "athena",
-		ResourceFilters: []*string{
-			aws.String("athena"),
+		ResourceFilters: []string{
+			"athena",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("workgroup/(?P<WorkGroup>[^/]+)"),
@@ -135,8 +134,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/ElasticBeanstalk",
 		Alias:     "beanstalk",
-		ResourceFilters: []*string{
-			aws.String("elasticbeanstalk:environment"),
+		ResourceFilters: []string{
+			"elasticbeanstalk:environment",
 		},
 	},
 	{
@@ -146,15 +145,15 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/Cassandra",
 		Alias:     "cassandra",
-		ResourceFilters: []*string{
-			aws.String("cassandra"),
+		ResourceFilters: []string{
+			"cassandra",
 		},
 	},
 	{
 		Namespace: "AWS/CloudFront",
 		Alias:     "cloudfront",
-		ResourceFilters: []*string{
-			aws.String("cloudfront:distribution"),
+		ResourceFilters: []string{
+			"cloudfront:distribution",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("distribution/(?P<DistributionId>[^/]+)"),
@@ -163,8 +162,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/Cognito",
 		Alias:     "cognito-idp",
-		ResourceFilters: []*string{
-			aws.String("cognito-idp:userpool"),
+		ResourceFilters: []string{
+			"cognito-idp:userpool",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("userpool/(?P<UserPool>[^/]+)"),
@@ -173,8 +172,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/DMS",
 		Alias:     "dms",
-		ResourceFilters: []*string{
-			aws.String("dms"),
+		ResourceFilters: []string{
+			"dms",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("rep:[^/]+/(?P<ReplicationInstanceIdentifier>[^/]+)"),
@@ -184,16 +183,16 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/DDoSProtection",
 		Alias:     "shield",
-		ResourceFilters: []*string{
-			aws.String("shield:protection"),
+		ResourceFilters: []string{
+			"shield:protection",
 		},
 	},
 	{
 		Namespace: "AWS/DocDB",
 		Alias:     "docdb",
-		ResourceFilters: []*string{
-			aws.String("rds:db"),
-			aws.String("rds:cluster"),
+		ResourceFilters: []string{
+			"rds:db",
+			"rds:cluster",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("cluster:(?P<DBClusterIdentifier>[^/]+)"),
@@ -203,8 +202,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/DX",
 		Alias:     "dx",
-		ResourceFilters: []*string{
-			aws.String("directconnect"),
+		ResourceFilters: []string{
+			"directconnect",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":dxcon/(?P<ConnectionId>[^/]+)"),
@@ -215,8 +214,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/DynamoDB",
 		Alias:     "dynamodb",
-		ResourceFilters: []*string{
-			aws.String("dynamodb:table"),
+		ResourceFilters: []string{
+			"dynamodb:table",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":table/(?P<TableName>[^/]+)"),
@@ -225,8 +224,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/EBS",
 		Alias:     "ebs",
-		ResourceFilters: []*string{
-			aws.String("ec2:volume"),
+		ResourceFilters: []string{
+			"ec2:volume",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("volume/(?P<VolumeId>[^/]+)"),
@@ -235,8 +234,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/ElastiCache",
 		Alias:     "ec",
-		ResourceFilters: []*string{
-			aws.String("elasticache:cluster"),
+		ResourceFilters: []string{
+			"elasticache:cluster",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("cluster:(?P<CacheClusterId>[^/]+)"),
@@ -245,8 +244,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/EC2",
 		Alias:     "ec2",
-		ResourceFilters: []*string{
-			aws.String("ec2:instance"),
+		ResourceFilters: []string{
+			"ec2:instance",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("instance/(?P<InstanceId>[^/]+)"),
@@ -262,9 +261,9 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/ECS",
 		Alias:     "ecs-svc",
-		ResourceFilters: []*string{
-			aws.String("ecs:cluster"),
-			aws.String("ecs:service"),
+		ResourceFilters: []string{
+			"ecs:cluster",
+			"ecs:service",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("cluster/(?P<ClusterName>[^/]+)"),
@@ -274,9 +273,9 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "ECS/ContainerInsights",
 		Alias:     "ecs-containerinsights",
-		ResourceFilters: []*string{
-			aws.String("ecs:cluster"),
-			aws.String("ecs:service"),
+		ResourceFilters: []string{
+			"ecs:cluster",
+			"ecs:service",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			// Use "new" long arns as per
@@ -288,8 +287,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/EFS",
 		Alias:     "efs",
-		ResourceFilters: []*string{
-			aws.String("elasticfilesystem:file-system"),
+		ResourceFilters: []string{
+			"elasticfilesystem:file-system",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("file-system/(?P<FileSystemId>[^/]+)"),
@@ -298,8 +297,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/ELB",
 		Alias:     "elb",
-		ResourceFilters: []*string{
-			aws.String("elasticloadbalancing:loadbalancer"),
+		ResourceFilters: []string{
+			"elasticloadbalancing:loadbalancer",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":loadbalancer/(?P<LoadBalancerName>.+)$"),
@@ -308,8 +307,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/ElasticMapReduce",
 		Alias:     "emr",
-		ResourceFilters: []*string{
-			aws.String("elasticmapreduce:cluster"),
+		ResourceFilters: []string{
+			"elasticmapreduce:cluster",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("cluster/(?P<JobFlowId>[^/]+)"),
@@ -318,8 +317,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/EMRServerless",
 		Alias:     "emr-serverless",
-		ResourceFilters: []*string{
-			aws.String("emr-serverless:applications"),
+		ResourceFilters: []string{
+			"emr-serverless:applications",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("applications/(?P<ApplicationId>[^/]+)"),
@@ -328,8 +327,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/ES",
 		Alias:     "es",
-		ResourceFilters: []*string{
-			aws.String("es:domain"),
+		ResourceFilters: []string{
+			"es:domain",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":domain/(?P<DomainName>[^/]+)"),
@@ -338,8 +337,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/Firehose",
 		Alias:     "firehose",
-		ResourceFilters: []*string{
-			aws.String("firehose"),
+		ResourceFilters: []string{
+			"firehose",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":deliverystream/(?P<DeliveryStreamName>[^/]+)"),
@@ -348,8 +347,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/FSx",
 		Alias:     "fsx",
-		ResourceFilters: []*string{
-			aws.String("fsx:file-system"),
+		ResourceFilters: []string{
+			"fsx:file-system",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("file-system/(?P<FileSystemId>[^/]+)"),
@@ -358,8 +357,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/GameLift",
 		Alias:     "gamelift",
-		ResourceFilters: []*string{
-			aws.String("gamelift"),
+		ResourceFilters: []string{
+			"gamelift",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":fleet/(?P<FleetId>[^/]+)"),
@@ -368,8 +367,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/GlobalAccelerator",
 		Alias:     "ga",
-		ResourceFilters: []*string{
-			aws.String("globalaccelerator"),
+		ResourceFilters: []string{
+			"globalaccelerator",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("destinationEdge/(?P<DestinationEdge>[^/]+)"),
@@ -382,8 +381,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "Glue",
 		Alias:     "glue",
-		ResourceFilters: []*string{
-			aws.String("glue:job"),
+		ResourceFilters: []string{
+			"glue:job",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":job/(?P<JobName>[^/]+)"),
@@ -392,9 +391,9 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/IoT",
 		Alias:     "iot",
-		ResourceFilters: []*string{
-			aws.String("iot:rule"),
-			aws.String("iot:provisioningtemplate"),
+		ResourceFilters: []string{
+			"iot:rule",
+			"iot:provisioningtemplate",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":rule/(?P<RuleName>[^/]+)"),
@@ -404,8 +403,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/Kafka",
 		Alias:     "kafka",
-		ResourceFilters: []*string{
-			aws.String("kafka:cluster"),
+		ResourceFilters: []string{
+			"kafka:cluster",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":cluster/(?P<Cluster_Name>[^/]+)"),
@@ -414,8 +413,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/KafkaConnect",
 		Alias:     "kafkaconnect",
-		ResourceFilters: []*string{
-			aws.String("kafkaconnect"),
+		ResourceFilters: []string{
+			"kafkaconnect",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":connector/(?P<Connector_Name>[^/]+)"),
@@ -424,8 +423,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/Kinesis",
 		Alias:     "kinesis",
-		ResourceFilters: []*string{
-			aws.String("kinesis:stream"),
+		ResourceFilters: []string{
+			"kinesis:stream",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":stream/(?P<StreamName>[^/]+)"),
@@ -438,8 +437,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/Lambda",
 		Alias:     "lambda",
-		ResourceFilters: []*string{
-			aws.String("lambda:function"),
+		ResourceFilters: []string{
+			"lambda:function",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":function:(?P<FunctionName>[^/]+)"),
@@ -448,10 +447,10 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/MediaConnect",
 		Alias:     "mediaconnect",
-		ResourceFilters: []*string{
-			aws.String("mediaconnect:flow"),
-			aws.String("mediaconnect:source"),
-			aws.String("mediaconnect:output"),
+		ResourceFilters: []string{
+			"mediaconnect:flow",
+			"mediaconnect:source",
+			"mediaconnect:output",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("^(?P<FlowARN>.*:flow:.*)$"),
@@ -462,8 +461,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/MediaLive",
 		Alias:     "medialive",
-		ResourceFilters: []*string{
-			aws.String("medialive:channel"),
+		ResourceFilters: []string{
+			"medialive:channel",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":channel:(?P<ChannelId>.+)$"),
@@ -472,8 +471,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/MediaTailor",
 		Alias:     "mediatailor",
-		ResourceFilters: []*string{
-			aws.String("mediatailor:playbackConfiguration"),
+		ResourceFilters: []string{
+			"mediatailor:playbackConfiguration",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("playbackConfiguration/(?P<ConfigurationName>[^/]+)"),
@@ -482,9 +481,9 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/Neptune",
 		Alias:     "neptune",
-		ResourceFilters: []*string{
-			aws.String("rds:db"),
-			aws.String("rds:cluster"),
+		ResourceFilters: []string{
+			"rds:db",
+			"rds:cluster",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":cluster:(?P<DBClusterIdentifier>[^/]+)"),
@@ -494,8 +493,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/NetworkFirewall",
 		Alias:     "nfw",
-		ResourceFilters: []*string{
-			aws.String("network-firewall:firewall"),
+		ResourceFilters: []string{
+			"network-firewall:firewall",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("firewall/(?P<FirewallName>[^/]+)"),
@@ -504,8 +503,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/NATGateway",
 		Alias:     "ngw",
-		ResourceFilters: []*string{
-			aws.String("ec2:natgateway"),
+		ResourceFilters: []string{
+			"ec2:natgateway",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("natgateway/(?P<NatGatewayId>[^/]+)"),
@@ -514,9 +513,9 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/NetworkELB",
 		Alias:     "nlb",
-		ResourceFilters: []*string{
-			aws.String("elasticloadbalancing:loadbalancer/net"),
-			aws.String("elasticloadbalancing:targetgroup"),
+		ResourceFilters: []string{
+			"elasticloadbalancing:loadbalancer/net",
+			"elasticloadbalancing:targetgroup",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":(?P<TargetGroup>targetgroup/.+)"),
@@ -526,8 +525,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/PrivateLinkEndpoints",
 		Alias:     "vpc-endpoint",
-		ResourceFilters: []*string{
-			aws.String("ec2:vpc-endpoint"),
+		ResourceFilters: []string{
+			"ec2:vpc-endpoint",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":vpc-endpoint/(?P<VPC_Endpoint_Id>.+)"),
@@ -536,8 +535,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/PrivateLinkServices",
 		Alias:     "vpc-endpoint-service",
-		ResourceFilters: []*string{
-			aws.String("ec2:vpc-endpoint-service"),
+		ResourceFilters: []string{
+			"ec2:vpc-endpoint-service",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":vpc-endpoint-service:(?P<Service_Id>.+)"),
@@ -550,9 +549,9 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/RDS",
 		Alias:     "rds",
-		ResourceFilters: []*string{
-			aws.String("rds:db"),
-			aws.String("rds:cluster"),
+		ResourceFilters: []string{
+			"rds:db",
+			"rds:cluster",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":cluster:(?P<DBClusterIdentifier>[^/]+)"),
@@ -562,8 +561,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/Redshift",
 		Alias:     "redshift",
-		ResourceFilters: []*string{
-			aws.String("redshift:cluster"),
+		ResourceFilters: []string{
+			"redshift:cluster",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":cluster:(?P<ClusterIdentifier>[^/]+)"),
@@ -572,8 +571,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/Route53Resolver",
 		Alias:     "route53-resolver",
-		ResourceFilters: []*string{
-			aws.String("route53resolver"),
+		ResourceFilters: []string{
+			"route53resolver",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":resolver-endpoint/(?P<EndpointId>[^/]+)"),
@@ -582,8 +581,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/Route53",
 		Alias:     "route53",
-		ResourceFilters: []*string{
-			aws.String("route53"),
+		ResourceFilters: []string{
+			"route53",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":healthcheck/(?P<HealthCheckId>[^/]+)"),
@@ -592,8 +591,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/S3",
 		Alias:     "s3",
-		ResourceFilters: []*string{
-			aws.String("s3"),
+		ResourceFilters: []string{
+			"s3",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("(?P<BucketName>[^:]+)$"),
@@ -606,8 +605,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/States",
 		Alias:     "sfn",
-		ResourceFilters: []*string{
-			aws.String("states"),
+		ResourceFilters: []string{
+			"states",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("(?P<StateMachineArn>.*)"),
@@ -616,8 +615,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/SNS",
 		Alias:     "sns",
-		ResourceFilters: []*string{
-			aws.String("sns"),
+		ResourceFilters: []string{
+			"sns",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("(?P<TopicName>[^:]+)$"),
@@ -626,8 +625,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/SQS",
 		Alias:     "sqs",
-		ResourceFilters: []*string{
-			aws.String("sqs"),
+		ResourceFilters: []string{
+			"sqs",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("(?P<QueueName>[^:]+)$"),
@@ -636,8 +635,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/StorageGateway",
 		Alias:     "storagegateway",
-		ResourceFilters: []*string{
-			aws.String("storagegateway"),
+		ResourceFilters: []string{
+			"storagegateway",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":gateway/(?P<GatewayId>[^:]+)$"),
@@ -648,8 +647,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/TransitGateway",
 		Alias:     "tgw",
-		ResourceFilters: []*string{
-			aws.String("ec2:transit-gateway"),
+		ResourceFilters: []string{
+			"ec2:transit-gateway",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":transit-gateway/(?P<TransitGateway>[^/]+)"),
@@ -659,8 +658,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/VPN",
 		Alias:     "vpn",
-		ResourceFilters: []*string{
-			aws.String("ec2:vpn-connection"),
+		ResourceFilters: []string{
+			"ec2:vpn-connection",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":vpn-connection/(?P<VpnId>[^/]+)"),
@@ -669,8 +668,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/WAFV2",
 		Alias:     "wafv2",
-		ResourceFilters: []*string{
-			aws.String("wafv2"),
+		ResourceFilters: []string{
+			"wafv2",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile("/webacl/(?P<WebACL>[^/]+)"),
@@ -679,9 +678,9 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/WorkSpaces",
 		Alias:     "workspaces",
-		ResourceFilters: []*string{
-			aws.String("workspaces:workspace"),
-			aws.String("workspaces:directory"),
+		ResourceFilters: []string{
+			"workspaces:workspace",
+			"workspaces:directory",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":workspace/(?P<WorkspaceId>[^/]+)$"),
@@ -691,8 +690,8 @@ var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/AOSS",
 		Alias:     "aoss",
-		ResourceFilters: []*string{
-			aws.String("aoss:collection"),
+		ResourceFilters: []string{
+			"aoss:collection",
 		},
 		DimensionRegexps: []*regexp.Regexp{
 			regexp.MustCompile(":collection/(?P<CollectionId>[^/]+)"),

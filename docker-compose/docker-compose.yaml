@@ -50,7 +50,9 @@ services:
     environment:
       AWS_REGION: ${AWS_REGION}
       AWS_PROFILE: ${AWS_PROFILE}
-    expose: 
+    ports:
+      - "8080:8080"
+    expose:
       - 8080
     volumes:
       - ./yace-config.yaml:/tmp/config.yml
@@ -58,5 +60,6 @@ services:
     command:
       - -listen-address=:8080
       - -config.file=/tmp/config.yml
+      - -profiling.enabled=true
     networks:
       - monitoring

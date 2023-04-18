@@ -122,7 +122,7 @@ func UpdateMetrics(
 	logger logging.Logger,
 	cfg config.ScrapeConf,
 	registry *prometheus.Registry,
-	cache session.SessionCache,
+	cache session.AWSClientCache,
 	optFuncs ...OptionsFunc,
 ) error {
 	options := defaultOptions
