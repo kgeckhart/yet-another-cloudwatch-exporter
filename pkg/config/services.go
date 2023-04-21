@@ -22,6 +22,10 @@ func (sc serviceConfigs) GetService(serviceType string) *ServiceConfig {
 	return nil
 }
 
+func (sc ServiceConfig) DiscoveredByTagging() bool {
+	return len(sc.ResourceFilters) > 0
+}
+
 var SupportedServices = serviceConfigs{
 	{
 		Namespace: "AWS/CertificateManager",

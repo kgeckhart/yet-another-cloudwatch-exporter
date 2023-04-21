@@ -66,7 +66,7 @@ func (c Client) GetResources(ctx context.Context, job *config.Job, region string
 	var resources []*model.TaggedResource
 	shouldHaveDiscoveredResources := false
 
-	if len(svc.ResourceFilters) > 0 {
+	if svc.DiscoveredByTagging() {
 		shouldHaveDiscoveredResources = true
 		inputparams := &resourcegroupstaggingapi.GetResourcesInput{
 			ResourceTypeFilters: svc.ResourceFilters,

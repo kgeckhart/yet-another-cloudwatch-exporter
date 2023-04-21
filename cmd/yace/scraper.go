@@ -36,13 +36,11 @@ func (s *scraper) makeHandler() func(http.ResponseWriter, *http.Request) {
 
 func (s *scraper) decoupled(ctx context.Context, logger logging.Logger, cache session.AWSClientCache) {
 	logger.Debug("Starting scraping async")
-	start := time.Now()
 	s.scrape(ctx, logger, cache)
-	scrapeTime := time.Since(start)
 
 	scrapingDuration := time.Duration(scrapingInterval) * time.Second
 	ticker := time.NewTicker(scrapingDuration)
-	logger.Info("Initial scrape completed", "scraping_interval", scrapingInterval, "scrape_time", scrapeTime)
+
 	defer ticker.Stop()
 	for {
 		select {
