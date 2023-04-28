@@ -101,13 +101,13 @@ func NewYACEApp() *cli.App {
 		},
 		&cli.IntFlag{
 			Name:        "cloudwatch-concurrency",
-			Value:       exporter.DefaultCloudWatchAPIConcurrency,
+			Value:       session.DefaultCloudWatchAPIConcurrency,
 			Usage:       "Maximum number of concurrent requests to CloudWatch API.",
 			Destination: &cloudwatchConcurrency,
 		},
 		&cli.IntFlag{
 			Name:        "tag-concurrency",
-			Value:       exporter.DefaultTaggingAPIConcurrency,
+			Value:       session.DefaultTaggingAPIConcurrency,
 			Usage:       "Maximum number of concurrent requests to Resource Tagging API.",
 			Destination: &tagConcurrency,
 		},
@@ -191,7 +191,7 @@ func startScraper(c *cli.Context) error {
 	featureFlags := c.StringSlice(enableFeatureFlag)
 
 	s := NewScraper(featureFlags)
-	cache := session.NewSessionCache(cfg, fips, logger)
+	cache := session.NewSessionCache(cfg, fips, logger, cloudwatchConcurrency, tagConcurrency)
 
 	ctx, cancelRunningScrape := context.WithCancel(context.Background())
 	go s.decoupled(ctx, logger, cache)
@@ -234,7 +234,7 @@ func startScraper(c *cli.Context) error {
 		}
 
 		logger.Info("Reset session cache")
-		cache = session.NewSessionCache(cfg, fips, logger)
+		cache = session.NewSessionCache(cfg, fips, logger, cloudwatchConcurrency, tagConcurrency)
 
 		cancelRunningScrape()
 		ctx, cancelRunningScrape = context.WithCancel(context.Background())

@@ -30,10 +30,8 @@ var Metrics = []prometheus.Collector{
 }
 
 const (
-	DefaultMetricsPerQuery          = 500
-	DefaultLabelsSnakeCase          = false
-	DefaultCloudWatchAPIConcurrency = 5
-	DefaultTaggingAPIConcurrency    = 5
+	DefaultMetricsPerQuery = 500
+	DefaultLabelsSnakeCase = false
 )
 
 // featureFlagsMap is a map that contains the enabled feature flags. If a key is not present, it means the feature flag
@@ -41,19 +39,15 @@ const (
 type featureFlagsMap map[string]struct{}
 
 type options struct {
-	metricsPerQuery          int
-	labelsSnakeCase          bool
-	cloudWatchAPIConcurrency int
-	taggingAPIConcurrency    int
-	featureFlags             featureFlagsMap
+	metricsPerQuery int
+	labelsSnakeCase bool
+	featureFlags    featureFlagsMap
 }
 
 var defaultOptions = options{
-	metricsPerQuery:          DefaultMetricsPerQuery,
-	labelsSnakeCase:          DefaultLabelsSnakeCase,
-	cloudWatchAPIConcurrency: DefaultCloudWatchAPIConcurrency,
-	taggingAPIConcurrency:    DefaultTaggingAPIConcurrency,
-	featureFlags:             make(featureFlagsMap),
+	metricsPerQuery: DefaultMetricsPerQuery,
+	labelsSnakeCase: DefaultLabelsSnakeCase,
+	featureFlags:    make(featureFlagsMap),
 }
 
 // IsFeatureFlag implements the FeatureFlags interface, allowing us to inject the options-configure feature flags in the rest of the code.
@@ -82,28 +76,6 @@ func LabelsSnakeCase(labelsSnakeCase bool) OptionsFunc {
 	}
 }
 
-func CloudWatchAPIConcurrency(maxConcurrency int) OptionsFunc {
-	return func(o *options) error {
-		if maxConcurrency <= 0 {
-			return fmt.Errorf("CloudWatchAPIConcurrency must be a positive value")
-		}
-
-		o.cloudWatchAPIConcurrency = maxConcurrency
-		return nil
-	}
-}
-
-func TaggingAPIConcurrency(maxConcurrency int) OptionsFunc {
-	return func(o *options) error {
-		if maxConcurrency <= 0 {
-			return fmt.Errorf("TaggingAPIConcurrency must be a positive value")
-		}
-
-		o.taggingAPIConcurrency = maxConcurrency
-		return nil
-	}
-}
-
 // EnableFeatureFlag is an option that enables a feature flag on the YACE's entrypoint.
 func EnableFeatureFlag(flags ...string) OptionsFunc {
 	return func(o *options) error {
@@ -121,7 +93,7 @@ func EnableFeatureFlag(flags ...string) OptionsFunc {
 // - `config`: this is the struct representation of the configuration defined in top-level configuration
 // - `logger`: any implementation of the `Logger` interface
 // - `registry`: any prometheus compatible registry where scraped AWS metrics will be written
-// - `cache`: any implementation of the `SessionCache`
+// - `cache`: any implementation of the `ClientCache`
 // - `optFuncs`: (optional) any number of options funcs
 //
 // You can pre-register any of the default metrics with the provided `registry` if you want them
@@ -133,7 +105,7 @@ func UpdateMetrics(
 	logger logging.Logger,
 	cfg config.ScrapeConf,
 	registry *prometheus.Registry,
-	cache session.SessionCache,
+	cache session.ClientCache,
 	optFuncs ...OptionsFunc,
 ) error {
 	options := defaultOptions
@@ -152,8 +124,6 @@ func UpdateMetrics(
 		cfg,
 		cache,
 		options.metricsPerQuery,
-		options.cloudWatchAPIConcurrency,
-		options.taggingAPIConcurrency,
 	)
 
 	metrics, observedMetricLabels, err := promutil.BuildMetrics(cloudwatchData, options.labelsSnakeCase, logger)

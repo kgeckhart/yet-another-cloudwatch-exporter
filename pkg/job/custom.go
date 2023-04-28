@@ -11,44 +11,13 @@ import (
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/config"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/logging"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
-	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/session"
 )
 
 func runCustomNamespaceJob(
 	ctx context.Context,
-	logger logging.Logger,
-	cache session.SessionCache,
-	metricsPerQuery int,
 	job *config.CustomNamespace,
 	region string,
-	role config.Role,
-	account *string,
-	cloudwatchAPIConcurrency int,
-) []*model.CloudwatchData {
-	clientCloudwatch := apicloudwatch.NewLimitedConcurrencyClient(
-		apicloudwatch.NewClient(
-			logger,
-			cache.GetCloudwatch(&region, role),
-		),
-		cloudwatchAPIConcurrency,
-	)
-
-	return scrapeCustomNamespaceJobUsingMetricData(
-		ctx,
-		job,
-		region,
-		account,
-		clientCloudwatch,
-		logger,
-		metricsPerQuery,
-	)
-}
-
-func scrapeCustomNamespaceJobUsingMetricData(
-	ctx context.Context,
-	job *config.CustomNamespace,
-	region string,
-	accountID *string,
+	accountID string,
 	clientCloudwatch apicloudwatch.CloudWatchClient,
 	logger logging.Logger,
 	metricsPerQuery int,
@@ -82,22 +51,22 @@ func scrapeCustomNamespaceJobUsingMetricData(
 			input := getMetricDatas[i:end]
 			filter := apicloudwatch.CreateGetMetricDataInput(input, &job.Namespace, length, job.Delay, job.RoundingPeriod, logger)
 			data := clientCloudwatch.GetMetricData(ctx, filter)
-			if data != nil {
-				output := make([]*model.CloudwatchData, 0)
-				for _, MetricDataResult := range data.MetricDataResults {
-					getMetricData, err := findGetMetricDataByIDForCustomNamespace(input, *MetricDataResult.Id)
-					if err == nil {
-						if len(MetricDataResult.Values) != 0 {
-							getMetricData.GetMetricDataPoint = MetricDataResult.Values[0]
-							getMetricData.GetMetricDataTimestamps = MetricDataResult.Timestamps[0]
-						}
-						output = append(output, getMetricData)
+
+			output := make([]*model.CloudwatchData, 0)
+			for _, MetricDataResult := range data {
+				getMetricData, err := findGetMetricDataByIDForCustomNamespace(input, *MetricDataResult.Id)
+				if err == nil {
+					if len(MetricDataResult.Values) != 0 {
+						getMetricData.GetMetricDataPoint = MetricDataResult.Values[0]
+						getMetricData.GetMetricDataTimestamps = MetricDataResult.Timestamps[0]
 					}
+					output = append(output, getMetricData)
 				}
-				mux.Lock()
-				cw = append(cw, output...)
-				mux.Unlock()
 			}
+			mux.Lock()
+			cw = append(cw, output...)
+			mux.Unlock()
+
 		}(i)
 	}
 
@@ -118,7 +87,7 @@ func getMetricDataForQueriesForCustomNamespace(
 	ctx context.Context,
 	customNamespaceJob *config.CustomNamespace,
 	region string,
-	accountID *string,
+	accountID string,
 	clientCloudwatch apicloudwatch.CloudWatchClient,
 	logger logging.Logger,
 ) []*model.CloudwatchData {
@@ -143,7 +112,7 @@ func getMetricDataForQueriesForCustomNamespace(
 
 			var data []*model.CloudwatchData
 
-			for _, cwMetric := range metricsList.Metrics {
+			for _, cwMetric := range metricsList {
 				if len(customNamespaceJob.DimensionNameRequirements) > 0 && !metricDimensionsMatchNames(cwMetric, customNamespaceJob.DimensionNameRequirements) {
 					continue
 				}
@@ -161,7 +130,7 @@ func getMetricDataForQueriesForCustomNamespace(
 						CustomTags:             customNamespaceJob.CustomTags,
 						Dimensions:             cwMetric.Dimensions,
 						Region:                 &region,
-						AccountID:              accountID,
+						AccountID:              &accountID,
 						Period:                 metric.Period,
 					})
 				}

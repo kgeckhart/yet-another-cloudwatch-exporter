@@ -16,11 +16,11 @@ type CloudWatchClient interface {
 	// ListMetrics returns the list of metrics and dimensions for a given namespace
 	// and metric name. Results pagination is handled automatically: the caller can
 	// optionally pass a non-nil func in order to handle results pages.
-	ListMetrics(ctx context.Context, namespace string, metric *config.Metric, fn func(page *cloudwatch.ListMetricsOutput)) (*cloudwatch.ListMetricsOutput, error)
+	ListMetrics(ctx context.Context, namespace string, metric *config.Metric, fn func(page []*cloudwatch.Metric)) ([]*cloudwatch.Metric, error)
 
 	// GetMetricData returns the output of the GetMetricData CloudWatch API.
 	// Results pagination is handled automatically.
-	GetMetricData(ctx context.Context, filter *cloudwatch.GetMetricDataInput) *cloudwatch.GetMetricDataOutput
+	GetMetricData(ctx context.Context, filter *cloudwatch.GetMetricDataInput) []*cloudwatch.MetricDataResult
 
 	// GetMetricStatistics returns the output of the GetMetricStatistics CloudWatch API.
 	GetMetricStatistics(ctx context.Context, filter *cloudwatch.GetMetricStatisticsInput) []*cloudwatch.Datapoint
@@ -42,7 +42,7 @@ func NewClient(logger logging.Logger, cloudwatchAPI cloudwatchiface.CloudWatchAP
 	}
 }
 
-func (c Client) ListMetrics(ctx context.Context, namespace string, metric *config.Metric, fn func(page *cloudwatch.ListMetricsOutput)) (*cloudwatch.ListMetricsOutput, error) {
+func (c Client) ListMetrics(ctx context.Context, namespace string, metric *config.Metric, fn func(page []*cloudwatch.Metric)) ([]*cloudwatch.Metric, error) {
 	filter := &cloudwatch.ListMetricsInput{
 		MetricName: aws.String(metric.Name),
 		Namespace:  aws.String(namespace),
@@ -52,13 +52,13 @@ func (c Client) ListMetrics(ctx context.Context, namespace string, metric *confi
 		c.logger.Debug("ListMetrics", "input", filter)
 	}
 
-	var res cloudwatch.ListMetricsOutput
+	var metrics []*cloudwatch.Metric
 	err := c.cloudwatchAPI.ListMetricsPagesWithContext(ctx, filter,
 		func(page *cloudwatch.ListMetricsOutput, lastPage bool) bool {
 			if fn != nil {
-				fn(page)
+				fn(page.Metrics)
 			} else {
-				res.Metrics = append(res.Metrics, page.Metrics...)
+				metrics = append(metrics, page.Metrics...)
 			}
 			return !lastPage
 		})
@@ -69,14 +69,39 @@ func (c Client) ListMetrics(ctx context.Context, namespace string, metric *confi
 	}
 
 	if c.logger.IsDebugEnabled() {
-		c.logger.Debug("ListMetrics", "output", res)
+		c.logger.Debug("ListMetrics", "output", metrics)
 	}
 
 	promutil.CloudwatchAPICounter.Inc()
-	return &res, nil
+	return metrics, nil
 }
 
-func (c Client) GetMetricData(ctx context.Context, filter *cloudwatch.GetMetricDataInput) *cloudwatch.GetMetricDataOutput {
+//func toMetrics(page *cloudwatch.ListMetricsOutput) []*model.Metric {
+//	modelMetrics := make([]*model.Metric, 0, len(page.Metrics))
+//	for _, cloudwatchMetric := range page.Metrics {
+//		modelMetric := &model.Metric{
+//			Name:       cloudwatchMetric.MetricName,
+//			Namespace:  cloudwatchMetric.Namespace,
+//			Dimensions: toDimensions(cloudwatchMetric.Dimensions),
+//		}
+//		modelMetrics = append(modelMetrics, modelMetric)
+//	}
+//	return modelMetrics
+//}
+//
+//func toDimensions(dimensions []*cloudwatch.Dimension) []*model.Dimension {
+//	modelDimensions := make([]*model.Dimension, 0, len(dimensions))
+//	for _, dimension := range dimensions {
+//		modelDimension := &model.Dimension{
+//			Name:  dimension.Name,
+//			Value: dimension.Value,
+//		}
+//		modelDimensions = append(modelDimensions, modelDimension)
+//	}
+//	return modelDimensions
+//}
+
+func (c Client) GetMetricData(ctx context.Context, filter *cloudwatch.GetMetricDataInput) []*cloudwatch.MetricDataResult {
 	var resp cloudwatch.GetMetricDataOutput
 
 	if c.logger.IsDebugEnabled() {
@@ -100,7 +125,7 @@ func (c Client) GetMetricData(ctx context.Context, filter *cloudwatch.GetMetricD
 		c.logger.Error(err, "GetMetricData error")
 		return nil
 	}
-	return &resp
+	return resp.MetricDataResults
 }
 
 func (c Client) GetMetricStatistics(ctx context.Context, filter *cloudwatch.GetMetricStatisticsInput) []*cloudwatch.Datapoint {
@@ -146,14 +171,14 @@ func (c LimitedConcurrencyClient) GetMetricStatistics(ctx context.Context, filte
 	return res
 }
 
-func (c LimitedConcurrencyClient) GetMetricData(ctx context.Context, filter *cloudwatch.GetMetricDataInput) *cloudwatch.GetMetricDataOutput {
+func (c LimitedConcurrencyClient) GetMetricData(ctx context.Context, filter *cloudwatch.GetMetricDataInput) []*cloudwatch.MetricDataResult {
 	c.sem <- struct{}{}
 	res := c.client.GetMetricData(ctx, filter)
 	<-c.sem
 	return res
 }
 
-func (c LimitedConcurrencyClient) ListMetrics(ctx context.Context, namespace string, metric *config.Metric, fn func(page *cloudwatch.ListMetricsOutput)) (*cloudwatch.ListMetricsOutput, error) {
+func (c LimitedConcurrencyClient) ListMetrics(ctx context.Context, namespace string, metric *config.Metric, fn func(page []*cloudwatch.Metric)) ([]*cloudwatch.Metric, error) {
 	c.sem <- struct{}{}
 	res, err := c.client.ListMetrics(ctx, namespace, metric, fn)
 	<-c.sem
