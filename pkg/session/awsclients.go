@@ -84,6 +84,8 @@ func NewAwsClientCache(cfg config.ScrapeConf, fips bool, logger logging.Logger) 
 		}
 	})))
 
+	options = append(options, aws_config.WithLogConfigurationWarnings(true))
+
 	endpointURLOverride := os.Getenv("AWS_ENDPOINT_URL")
 	if endpointURLOverride != "" {
 		options = append(options, aws_config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
@@ -102,7 +104,6 @@ func NewAwsClientCache(cfg config.ScrapeConf, fips bool, logger logging.Logger) 
 		return nil, err
 	}
 
-	stsClient := sts.NewFromConfig(c)
 	clients := map[config.Role]map[awsRegion]*clientCacheV2{}
 	for _, discoveryJob := range cfg.Discovery.Jobs {
 		serviceDefinition := config.SupportedServices.GetService(discoveryJob.Type)
@@ -118,7 +119,7 @@ func NewAwsClientCache(cfg config.ScrapeConf, fips bool, logger logging.Logger) 
 				clients[role] = map[awsRegion]*clientCacheV2{}
 			}
 			for _, region := range discoveryJob.Regions {
-				regionConfig, regionStsClient := awsConfigAndStsForRegion(role, &c, stsClient, region, role)
+				regionConfig, regionStsClient := awsConfigAndStsForRegion(role, &c, region, role)
 				clients[role][region] = &clientCacheV2{
 					awsConfig:      regionConfig,
 					sts:            regionStsClient,
@@ -143,7 +144,7 @@ func NewAwsClientCache(cfg config.ScrapeConf, fips bool, logger logging.Logger) 
 			for _, region := range staticJob.Regions {
 				// Discovery job client definitions have precedence
 				if _, exists := clients[role][region]; !exists {
-					regionConfig, regionStsClient := awsConfigAndStsForRegion(role, &c, stsClient, region, role)
+					regionConfig, regionStsClient := awsConfigAndStsForRegion(role, &c, region, role)
 					clients[role][region] = &clientCacheV2{
 						awsConfig:      regionConfig,
 						sts:            regionStsClient,
@@ -169,7 +170,7 @@ func NewAwsClientCache(cfg config.ScrapeConf, fips bool, logger logging.Logger) 
 			for _, region := range customNamespaceJob.Regions {
 				// Discovery job client definitions have precedence
 				if _, exists := clients[role][region]; !exists {
-					regionConfig, regionStsClient := awsConfigAndStsForRegion(role, &c, stsClient, region, role)
+					regionConfig, regionStsClient := awsConfigAndStsForRegion(role, &c, region, role)
 					clients[role][region] = &clientCacheV2{
 						awsConfig:      regionConfig,
 						sts:            regionStsClient,
@@ -496,23 +497,26 @@ func (acc *awsClientCache) Clear() {
 
 var defaultRole = config.Role{}
 
-func awsConfigAndStsForRegion(r config.Role, c *aws.Config, stsClient *sts.Client, region awsRegion, role config.Role) (*aws.Config, *sts.Client) {
+func awsConfigAndStsForRegion(r config.Role, c *aws.Config, region awsRegion, role config.Role) (*aws.Config, *sts.Client) {
+	regionalSts := sts.NewFromConfig(*c, func(options *sts.Options) {
+		options.Region = region
+	})
 	if r == defaultRole {
-		//We are not using delegated access so return the original config
-		return c, stsClient
+		//We are not using delegated access so return the original config and regional sts
+		return c, regionalSts
 	}
-
-	//TODO is this actually safe?
-	delegatedConfig := c.Copy()
-	delegatedConfig.Region = region
 
 	// based on https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/credentials/stscreds#hdr-Assume_Role
 	// found via https://github.com/aws/aws-sdk-go-v2/issues/1382
-	credentials := stscreds.NewAssumeRoleProvider(stsClient, role.RoleArn, func(options *stscreds.AssumeRoleOptions) {
+	credentials := stscreds.NewAssumeRoleProvider(regionalSts, role.RoleArn, func(options *stscreds.AssumeRoleOptions) {
 		if role.ExternalID != "" {
 			options.ExternalID = aws.String(role.ExternalID)
 		}
 	})
+
+	//TODO is this actually safe?
+	delegatedConfig := c.Copy()
+	delegatedConfig.Region = region
 	delegatedConfig.Credentials = aws.NewCredentialsCache(credentials)
 
 	delegatedStsClient := sts.NewFromConfig(delegatedConfig, func(options *sts.Options) {
