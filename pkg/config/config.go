@@ -36,16 +36,17 @@ type JobLevelMetricFields struct {
 }
 
 type Job struct {
-	Regions                   []string    `yaml:"regions"`
-	Type                      string      `yaml:"type"`
-	Roles                     []Role      `yaml:"roles"`
-	SearchTags                []model.Tag `yaml:"searchTags"`
-	CustomTags                []model.Tag `yaml:"customTags"`
-	DimensionNameRequirements []string    `yaml:"dimensionNameRequirements"`
-	Metrics                   []*Metric   `yaml:"metrics"`
-	RoundingPeriod            *int64      `yaml:"roundingPeriod"`
-	RecentlyActiveOnly        bool        `yaml:"recentlyActiveOnly"`
-	JobLevelMetricFields      `yaml:",inline"`
+	Regions                              []string    `yaml:"regions"`
+	Type                                 string      `yaml:"type"`
+	Roles                                []Role      `yaml:"roles"`
+	SearchTags                           []model.Tag `yaml:"searchTags"`
+	CustomTags                           []model.Tag `yaml:"customTags"`
+	DimensionNameRequirements            []string    `yaml:"dimensionNameRequirements"`
+	Metrics                              []*Metric   `yaml:"metrics"`
+	RoundingPeriod                       *int64      `yaml:"roundingPeriod"`
+	RecentlyActiveOnly                   bool        `yaml:"recentlyActiveOnly"`
+	AlwaysReturnFoundResourcesAndMetrics bool        `yaml:"alwaysReturnFoundResourcesAndMetrics"`
+	JobLevelMetricFields                 `yaml:",inline"`
 }
 
 type Static struct {

@@ -38,16 +38,24 @@ func runDiscoveryJob(
 
 	resources, err := clientTag.GetResources(ctx, job, region)
 	if err != nil {
-		if errors.Is(err, tagging.ErrExpectedToFindResources) {
+		shouldExit := true
+		isExpectedToFindResources := errors.Is(err, tagging.ErrExpectedToFindResources)
+
+		if isExpectedToFindResources && !job.AlwaysReturnFoundResourcesAndMetrics {
 			logger.Error(err, "No tagged resources made it through filtering")
+		} else if isExpectedToFindResources && job.AlwaysReturnFoundResourcesAndMetrics {
+			// Log message for this is covered outside the error condition
+			shouldExit = false
 		} else {
 			logger.Error(err, "Couldn't describe resources")
 		}
-		return resources, cw
+		if shouldExit {
+			return resources, cw
+		}
 	}
 
 	if len(resources) == 0 {
-		logger.Debug("No tagged resources", "region", region, "namespace", job.Type)
+		logger.Debug("No tagged resources")
 	}
 
 	svc := config.SupportedServices.GetService(job.Type)
