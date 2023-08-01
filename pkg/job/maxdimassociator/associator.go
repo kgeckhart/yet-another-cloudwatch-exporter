@@ -188,6 +188,8 @@ func (assoc Associator) AssociateMetricToResource(cwMetric *model.Metric) (*mode
 	return nil, mappingFound
 }
 
+var amazonMQBrokerSuffix = regexp.MustCompile("-[0-9]+$")
+
 // buildLabelsMap returns a map of labels names and values.
 // For some namespaces, values might need to be modified in order
 // to match the dimension value extracted from ARN.
@@ -202,9 +204,8 @@ func buildLabelsMap(cwMetric *model.Metric, regexpMapping *dimensionsRegexpMappi
 			// the value of the "Broker" dimension contains a number suffix
 			// that is not part of the resource ARN
 			if cwMetric.Namespace == "AWS/AmazonMQ" && name == "Broker" {
-				brokerSuffix := regexp.MustCompile("-[0-9]+$")
-				if brokerSuffix.MatchString(value) {
-					value = brokerSuffix.ReplaceAllString(value, "")
+				if amazonMQBrokerSuffix.MatchString(value) {
+					value = amazonMQBrokerSuffix.ReplaceAllString(value, "")
 				}
 			}
 
