@@ -1,4 +1,4 @@
-package cloudwatch
+package getmetricdata
 
 import "time"
 
@@ -16,11 +16,15 @@ func (tc TimeClock) Now() time.Time {
 	return time.Now()
 }
 
-// determineGetMetricDataWindow computes the start and end time for the GetMetricData request to AWS
+type MetricWindowCalculator struct {
+	clock Clock
+}
+
+// DetermineGetMetricDataWindow computes the start and end time for the GetMetricData request to AWS
 // Always uses the wall clock time as starting point for calculations to ensure that
 // a variety of exporter configurations will work reliably.
-func DetermineGetMetricDataWindow(clock Clock, roundingPeriod time.Duration, length time.Duration, delay time.Duration) (time.Time, time.Time) {
-	now := clock.Now()
+func (m MetricWindowCalculator) Calculate(roundingPeriod time.Duration, length time.Duration, delay time.Duration) (time.Time, time.Time) {
+	now := m.clock.Now()
 	if roundingPeriod > 0 {
 		// Round down the time to a factor of the period - rounding is recommended by AWS:
 		// https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_GetMetricData.html#API_GetMetricData_RequestParameters

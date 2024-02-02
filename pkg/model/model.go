@@ -32,7 +32,6 @@ type DiscoveryJob struct {
 	ExportedTagsOnMetrics       []string
 	IncludeContextOnInfoMetrics bool
 	DimensionsRegexps           []DimensionsRegexp
-	JobLevelMetricFields
 }
 
 type StaticJob struct {
@@ -55,16 +54,6 @@ type CustomNamespaceJob struct {
 	CustomTags                []Tag
 	DimensionNameRequirements []string
 	RoundingPeriod            *int64
-	JobLevelMetricFields
-}
-
-type JobLevelMetricFields struct {
-	Statistics             []string
-	Period                 int64
-	Length                 int64
-	Delay                  int64
-	NilToZero              *bool
-	AddCloudwatchTimestamp *bool
 }
 
 type Role struct {

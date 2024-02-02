@@ -281,15 +281,15 @@ func (j *Static) validateStaticJob(jobIdx int) error {
 	return nil
 }
 
-func (m *Metric) validateMetric(metricIdx int, parent string, discovery *JobLevelMetricFields) error {
+func (m *Metric) validateMetric(metricIdx int, parent string, jobFields *JobLevelMetricFields) error {
 	if m.Name == "" {
 		return fmt.Errorf("Metric [%s/%d] in %v: Name should not be empty", m.Name, metricIdx, parent)
 	}
 
 	mStatistics := m.Statistics
-	if len(mStatistics) == 0 && discovery != nil {
-		if len(discovery.Statistics) > 0 {
-			mStatistics = discovery.Statistics
+	if len(mStatistics) == 0 && jobFields != nil {
+		if len(jobFields.Statistics) > 0 {
+			mStatistics = jobFields.Statistics
 		} else {
 			return fmt.Errorf("Metric [%s/%d] in %v: Statistics should not be empty", m.Name, metricIdx, parent)
 		}
@@ -297,8 +297,8 @@ func (m *Metric) validateMetric(metricIdx int, parent string, discovery *JobLeve
 
 	mPeriod := m.Period
 	if mPeriod == 0 {
-		if discovery != nil && discovery.Period != 0 {
-			mPeriod = discovery.Period
+		if jobFields != nil && jobFields.Period != 0 {
+			mPeriod = jobFields.Period
 		} else {
 			mPeriod = model.DefaultPeriodSeconds
 		}
@@ -308,8 +308,8 @@ func (m *Metric) validateMetric(metricIdx int, parent string, discovery *JobLeve
 	}
 	mLength := m.Length
 	if mLength == 0 {
-		if discovery != nil && discovery.Length != 0 {
-			mLength = discovery.Length
+		if jobFields != nil && jobFields.Length != 0 {
+			mLength = jobFields.Length
 		} else {
 			mLength = model.DefaultLengthSeconds
 		}
@@ -317,8 +317,8 @@ func (m *Metric) validateMetric(metricIdx int, parent string, discovery *JobLeve
 
 	mDelay := m.Delay
 	if mDelay == 0 {
-		if discovery != nil && discovery.Delay != 0 {
-			mDelay = discovery.Delay
+		if jobFields != nil && jobFields.Delay != 0 {
+			mDelay = jobFields.Delay
 		} else {
 			mDelay = model.DefaultDelaySeconds
 		}
@@ -326,8 +326,8 @@ func (m *Metric) validateMetric(metricIdx int, parent string, discovery *JobLeve
 
 	mNilToZero := m.NilToZero
 	if mNilToZero == nil {
-		if discovery != nil && discovery.NilToZero != nil {
-			mNilToZero = discovery.NilToZero
+		if jobFields != nil && jobFields.NilToZero != nil {
+			mNilToZero = jobFields.NilToZero
 		} else {
 			mNilToZero = aws.Bool(false)
 		}
@@ -335,8 +335,8 @@ func (m *Metric) validateMetric(metricIdx int, parent string, discovery *JobLeve
 
 	mAddCloudwatchTimestamp := m.AddCloudwatchTimestamp
 	if mAddCloudwatchTimestamp == nil {
-		if discovery != nil && discovery.AddCloudwatchTimestamp != nil {
-			mAddCloudwatchTimestamp = discovery.AddCloudwatchTimestamp
+		if jobFields != nil && jobFields.AddCloudwatchTimestamp != nil {
+			mAddCloudwatchTimestamp = jobFields.AddCloudwatchTimestamp
 		} else {
 			mAddCloudwatchTimestamp = aws.Bool(false)
 		}
@@ -371,12 +371,6 @@ func (c *ScrapeConf) toModelConfig() model.JobsConfig {
 		job.DimensionNameRequirements = discoveryJob.DimensionNameRequirements
 		job.RoundingPeriod = discoveryJob.RoundingPeriod
 		job.RecentlyActiveOnly = discoveryJob.RecentlyActiveOnly
-		job.Statistics = discoveryJob.Statistics
-		job.Period = discoveryJob.Period
-		job.Length = discoveryJob.Length
-		job.Delay = discoveryJob.Delay
-		job.NilToZero = discoveryJob.NilToZero
-		job.AddCloudwatchTimestamp = discoveryJob.AddCloudwatchTimestamp
 		job.Roles = toModelRoles(discoveryJob.Roles)
 		job.SearchTags = toModelSearchTags(discoveryJob.SearchTags)
 		job.CustomTags = toModelTags(discoveryJob.CustomTags)
@@ -416,12 +410,6 @@ func (c *ScrapeConf) toModelConfig() model.JobsConfig {
 		job.DimensionNameRequirements = customNamespaceJob.DimensionNameRequirements
 		job.RoundingPeriod = customNamespaceJob.RoundingPeriod
 		job.RecentlyActiveOnly = customNamespaceJob.RecentlyActiveOnly
-		job.Statistics = customNamespaceJob.Statistics
-		job.Period = customNamespaceJob.Period
-		job.Length = customNamespaceJob.Length
-		job.Delay = customNamespaceJob.Delay
-		job.NilToZero = customNamespaceJob.NilToZero
-		job.AddCloudwatchTimestamp = customNamespaceJob.AddCloudwatchTimestamp
 		job.Roles = toModelRoles(customNamespaceJob.Roles)
 		job.CustomTags = toModelTags(customNamespaceJob.CustomTags)
 		job.Metrics = toModelMetricConfig(customNamespaceJob.Metrics)

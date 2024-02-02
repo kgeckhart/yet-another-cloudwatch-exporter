@@ -21,7 +21,7 @@ type resourceAssociator interface {
 }
 
 type getMetricDataProcessor interface {
-	Run(ctx context.Context, logger logging.Logger, namespace string, jobMetricLength int64, jobMetricDelay int64, jobRoundingPeriod *int64, requests []*model.CloudwatchData) ([]*model.CloudwatchData, error)
+	Run(ctx context.Context, logger logging.Logger, namespace string, jobMetricLength int64, jobMetricDelay int64, jobRoundingPeriod int64, requests []*model.CloudwatchData) ([]*model.CloudwatchData, error)
 }
 
 func runDiscoveryJob(
@@ -56,8 +56,8 @@ func runDiscoveryJob(
 		return resources, nil
 	}
 
-	jobLength := getLargestLengthForMetrics(job.Metrics)
-	getMetricDatas, err = gmdProcessor.Run(ctx, logger, svc.Namespace, jobLength, job.Delay, job.RoundingPeriod, getMetricDatas)
+	jobLength, jobDelay, jobRoundingPeriod := getLengthDelayAndRoundingPeriodFor(job.RoundingPeriod, job.Metrics)
+	getMetricDatas, err = gmdProcessor.Run(ctx, logger, svc.Namespace, jobLength, jobDelay, jobRoundingPeriod, getMetricDatas)
 	if err != nil {
 		logger.Error(err, "Failed to get metric data")
 		return nil, nil
@@ -66,14 +66,27 @@ func runDiscoveryJob(
 	return resources, getMetricDatas
 }
 
-func getLargestLengthForMetrics(metrics []*model.MetricConfig) int64 {
+func getLengthDelayAndRoundingPeriodFor(jobRoundingPeriod *int64, metrics []*model.MetricConfig) (int64, int64, int64) {
 	var length int64
+	var delay int64
+	roundingPeriod := model.DefaultPeriodSeconds
+
 	for _, metric := range metrics {
 		if metric.Length > length {
 			length = metric.Length
 		}
+		if metric.Delay > delay {
+			delay = metric.Delay
+		}
+		if metric.Period < roundingPeriod {
+			roundingPeriod = metric.Period
+		}
 	}
-	return length
+
+	if jobRoundingPeriod != nil {
+		roundingPeriod = *jobRoundingPeriod
+	}
+	return length, delay, roundingPeriod
 }
 
 func getMetricDataForQueries(

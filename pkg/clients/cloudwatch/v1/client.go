@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
@@ -84,15 +85,38 @@ func toModelDimensions(dimensions []*cloudwatch.Dimension) []model.Dimension {
 	return modelDimensions
 }
 
-func (c client) GetMetricData(ctx context.Context, logger logging.Logger, getMetricData []*model.CloudwatchData, namespace string, length int64, delay int64, configuredRoundingPeriod *int64) []cloudwatch_client.MetricDataResult {
+func (c client) GetMetricData(ctx context.Context, getMetricData []*model.CloudwatchData, namespace string, startTime time.Time, endTime time.Time) []cloudwatch_client.MetricDataResult {
 	var resp cloudwatch.GetMetricDataOutput
-	filter := createGetMetricDataInput(getMetricData, &namespace, length, delay, configuredRoundingPeriod, logger)
+
+	metricDataQueries := make([]*cloudwatch.MetricDataQuery, 0, len(getMetricData))
+	for _, data := range getMetricData {
+		metricStat := &cloudwatch.MetricStat{
+			Metric: &cloudwatch.Metric{
+				Dimensions: toCloudWatchDimensions(data.Dimensions),
+				MetricName: &data.MetricName,
+				Namespace:  &namespace,
+			},
+			Period: &data.GetMetricDataProcessingParams.Period,
+			Stat:   &data.GetMetricDataProcessingParams.Statistic,
+		}
+		metricDataQueries = append(metricDataQueries, &cloudwatch.MetricDataQuery{
+			Id:         &data.GetMetricDataProcessingParams.QueryID,
+			MetricStat: metricStat,
+			ReturnData: aws.Bool(true),
+		})
+	}
+	input := &cloudwatch.GetMetricDataInput{
+		EndTime:           &endTime,
+		StartTime:         &startTime,
+		MetricDataQueries: metricDataQueries,
+		ScanBy:            aws.String("TimestampDescending"),
+	}
 	if c.logger.IsDebugEnabled() {
-		c.logger.Debug("GetMetricData", "input", filter)
+		c.logger.Debug("GetMetricData", "input", input)
 	}
 
 	// Using the paged version of the function
-	err := c.cloudwatchAPI.GetMetricDataPagesWithContext(ctx, filter,
+	err := c.cloudwatchAPI.GetMetricDataPagesWithContext(ctx, input,
 		func(page *cloudwatch.GetMetricDataOutput, lastPage bool) bool {
 			promutil.CloudwatchAPICounter.Inc()
 			promutil.CloudwatchGetMetricDataAPICounter.Inc()

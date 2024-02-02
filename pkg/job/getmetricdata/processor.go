@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -14,28 +15,47 @@ import (
 )
 
 type Client interface {
-	GetMetricData(ctx context.Context, logger logging.Logger, getMetricData []*model.CloudwatchData, namespace string, length int64, delay int64, configuredRoundingPeriod *int64) []cloudwatch.MetricDataResult
+	GetMetricData(ctx context.Context, getMetricData []*model.CloudwatchData, namespace string, startTime time.Time, endTime time.Time) []cloudwatch.MetricDataResult
+}
+
+type WindowCalculator interface {
+	Calculate(roundingPeriod time.Duration, length time.Duration, delay time.Duration) (time.Time, time.Time)
 }
 
 type Processor struct {
 	metricsPerQuery int
 	client          Client
 	concurrency     int
+	calculator      WindowCalculator
 }
 
-func NewProcessor(client Client, metricsPerQuery int, concurrency int) Processor {
+func NewProcessor(client Client, metricsPerQuery int, concurrency int, windowCalculator ...WindowCalculator) Processor {
+	var usedCalculator WindowCalculator = MetricWindowCalculator{clock: TimeClock{}}
+	if len(windowCalculator) == 1 {
+		usedCalculator = windowCalculator[0]
+	}
 	return Processor{
 		metricsPerQuery: metricsPerQuery,
 		client:          client,
 		concurrency:     concurrency,
+		calculator:      usedCalculator,
 	}
 }
 
-func (p Processor) Run(ctx context.Context, logger logging.Logger, namespace string, jobMetricLength int64, jobMetricDelay int64, jobRoundingPeriod *int64, requests []*model.CloudwatchData) ([]*model.CloudwatchData, error) {
+func (p Processor) Run(ctx context.Context, logger logging.Logger, namespace string, jobMetricLength int64, jobMetricDelay int64, jobRoundingPeriod int64, requests []*model.CloudwatchData) ([]*model.CloudwatchData, error) {
 	metricDataLength := len(requests)
 	partitionSize := int(math.Ceil(float64(metricDataLength) / float64(p.metricsPerQuery)))
 	logger.Debug("GetMetricData partitions", "size", partitionSize)
 	getMetricDataOutput := make([][]cloudwatch.MetricDataResult, 0, partitionSize)
+
+	startTime, endTime := p.calculator.Calculate(
+		time.Duration(jobRoundingPeriod)*time.Second,
+		time.Duration(jobMetricLength)*time.Second,
+		time.Duration(jobMetricDelay)*time.Second)
+
+	if logger.IsDebugEnabled() {
+		logger.Debug("GetMetricData Window", "start_time", startTime.Format(TimeFormat), "end_time", endTime.Format(TimeFormat))
+	}
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(p.concurrency)
@@ -52,7 +72,7 @@ func (p Processor) Run(ctx context.Context, logger logging.Logger, namespace str
 
 		g.Go(func() error {
 			input := requests[start:end]
-			data := p.client.GetMetricData(gCtx, logger, input, namespace, jobMetricLength, jobMetricDelay, jobRoundingPeriod)
+			data := p.client.GetMetricData(gCtx, input, namespace, startTime, endTime)
 			if data != nil {
 				mu.Lock()
 				getMetricDataOutput = append(getMetricDataOutput, data)

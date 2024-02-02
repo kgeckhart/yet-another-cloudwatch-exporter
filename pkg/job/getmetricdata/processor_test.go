@@ -303,12 +303,8 @@ func TestProcessor_Run(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := Processor{
-				metricsPerQuery: 500,
-				client:          testClient{GetMetricDataResponse: tt.getMetricDataResponse},
-				concurrency:     1,
-			}
-			cloudwatchData, err := r.Run(context.Background(), logging.NewNopLogger(), "anything_is_fine", 1, 1, aws.Int64(1), getMetricDataProcessingParamsToCloudwatchData(tt.requests))
+			r := NewProcessor(testClient{GetMetricDataResponse: tt.getMetricDataResponse}, 500, 1)
+			cloudwatchData, err := r.Run(context.Background(), logging.NewNopLogger(), "anything_is_fine", 1, 1, 1, getMetricDataProcessingParamsToCloudwatchData(tt.requests))
 			require.NoError(t, err)
 			require.Len(t, cloudwatchData, len(tt.want))
 			got := make([]*model.GetMetricDataResult, 0, len(cloudwatchData))
@@ -339,7 +335,7 @@ func TestProcessor_Run_BatchesByMetricsPerQuery(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var callCounter atomic.Int32
-			getMetricDataFunc := func(ctx context.Context, logger logging.Logger, requests []*model.CloudwatchData, namespace string, length int64, delay int64, configuredRoundingPeriod *int64) []cloudwatch.MetricDataResult {
+			getMetricDataFunc := func(ctx context.Context, requests []*model.CloudwatchData, namespace string, startTime time.Time, endTime time.Time) []cloudwatch.MetricDataResult {
 				callCounter.Add(1)
 				response := make([]cloudwatch.MetricDataResult, 0, len(requests))
 				for _, gmd := range requests {
@@ -356,12 +352,8 @@ func TestProcessor_Run_BatchesByMetricsPerQuery(t *testing.T) {
 			for i := 0; i < tt.numberOfRequests; i++ {
 				requests = append(requests, getSampleMetricDatas(strconv.Itoa(i)))
 			}
-			r := Processor{
-				metricsPerQuery: tt.metricsPerQuery,
-				client:          testClient{GetMetricDataFunc: getMetricDataFunc},
-				concurrency:     1,
-			}
-			cloudwatchData, err := r.Run(context.Background(), logging.NewNopLogger(), "anything_is_fine", 1, 1, aws.Int64(1), requests)
+			r := NewProcessor(testClient{GetMetricDataFunc: getMetricDataFunc}, tt.metricsPerQuery, 1)
+			cloudwatchData, err := r.Run(context.Background(), logging.NewNopLogger(), "anything_is_fine", 1, 1, 1, requests)
 			require.NoError(t, err)
 			assert.Len(t, cloudwatchData, tt.numberOfRequests)
 			assert.Equal(t, tt.expectedNumberOfCallsToGetMetricData, callCounter.Load())
@@ -388,15 +380,15 @@ func getMetricDataProcessingParamsToCloudwatchData(params []*model.GetMetricData
 }
 
 type testClient struct {
-	GetMetricDataFunc     func(ctx context.Context, logger logging.Logger, getMetricData []*model.CloudwatchData, namespace string, length int64, delay int64, configuredRoundingPeriod *int64) []cloudwatch.MetricDataResult
+	GetMetricDataFunc     func(ctx context.Context, getMetricData []*model.CloudwatchData, namespace string, startTime time.Time, endTime time.Time) []cloudwatch.MetricDataResult
 	GetMetricDataResponse []cloudwatch.MetricDataResult
 }
 
-func (t testClient) GetMetricData(ctx context.Context, logger logging.Logger, getMetricData []*model.CloudwatchData, namespace string, length int64, delay int64, configuredRoundingPeriod *int64) []cloudwatch.MetricDataResult {
+func (t testClient) GetMetricData(ctx context.Context, getMetricData []*model.CloudwatchData, namespace string, startTime time.Time, endTime time.Time) []cloudwatch.MetricDataResult {
 	if t.GetMetricDataResponse != nil {
 		return t.GetMetricDataResponse
 	}
-	return t.GetMetricDataFunc(ctx, logger, getMetricData, namespace, length, delay, configuredRoundingPeriod)
+	return t.GetMetricDataFunc(ctx, getMetricData, namespace, startTime, endTime)
 }
 
 func getSampleMetricDatas(id string) *model.CloudwatchData {
