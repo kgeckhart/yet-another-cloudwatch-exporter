@@ -27,12 +27,10 @@ type DiscoveryJob struct {
 	CustomTags                  []Tag
 	DimensionNameRequirements   []string
 	Metrics                     []*MetricConfig
-	RoundingPeriod              *int64
 	RecentlyActiveOnly          bool
 	ExportedTagsOnMetrics       []string
 	IncludeContextOnInfoMetrics bool
 	DimensionsRegexps           []DimensionsRegexp
-	JobLevelMetricFields
 }
 
 type StaticJob struct {
@@ -54,17 +52,6 @@ type CustomNamespaceJob struct {
 	Metrics                   []*MetricConfig
 	CustomTags                []Tag
 	DimensionNameRequirements []string
-	RoundingPeriod            *int64
-	JobLevelMetricFields
-}
-
-type JobLevelMetricFields struct {
-	Statistics             []string
-	Period                 int64
-	Length                 int64
-	Delay                  int64
-	NilToZero              *bool
-	AddCloudwatchTimestamp *bool
 }
 
 type Role struct {
@@ -77,6 +64,7 @@ type MetricConfig struct {
 	Statistics             []string
 	Period                 int64
 	Length                 int64
+	RoundingPeriod         int64
 	Delay                  int64
 	NilToZero              *bool
 	AddCloudwatchTimestamp *bool
@@ -149,19 +137,24 @@ type ScrapeContext struct {
 // CloudwatchData is an internal representation of a CloudWatch
 // metric with attached data points, metric and resource information.
 type CloudwatchData struct {
-	ID                      *string
-	MetricID                *string
-	Metric                  *string
-	Namespace               *string
-	Statistics              []string
-	Points                  []*Datapoint
-	GetMetricDataPoint      *float64
-	GetMetricDataTimestamps time.Time
-	NilToZero               *bool
-	AddCloudwatchTimestamp  *bool
-	Tags                    []Tag
-	Dimensions              []*Dimension
-	Period                  int64
+	ID                       string
+	Namespace                string
+	Tags                     []Tag
+	Dimensions               []*Dimension
+	MetricConfig             *MetricConfig
+	GetMetricDataResult      *GetMetricDataResult
+	GetMetricStatisticResult *GetMetricStatisticResult
+}
+
+type GetMetricStatisticResult struct {
+	Datapoints []*Datapoint
+}
+
+type GetMetricDataResult struct {
+	ID        *string
+	Statistic string
+	Datapoint float64
+	Timestamp time.Time
 }
 
 // TaggedResource is an AWS resource with tags

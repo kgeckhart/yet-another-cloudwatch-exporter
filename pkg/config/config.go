@@ -39,6 +39,7 @@ type JobLevelMetricFields struct {
 	Delay                  int64    `yaml:"delay"`
 	NilToZero              *bool    `yaml:"nilToZero"`
 	AddCloudwatchTimestamp *bool    `yaml:"addCloudwatchTimestamp"`
+	RoundingPeriod         *int64   `yaml:"roundingPeriod"`
 }
 
 type Job struct {
@@ -49,7 +50,6 @@ type Job struct {
 	CustomTags                  []Tag     `yaml:"customTags"`
 	DimensionNameRequirements   []string  `yaml:"dimensionNameRequirements"`
 	Metrics                     []*Metric `yaml:"metrics"`
-	RoundingPeriod              *int64    `yaml:"roundingPeriod"`
 	RecentlyActiveOnly          bool      `yaml:"recentlyActiveOnly"`
 	IncludeContextOnInfoMetrics bool      `yaml:"includeContextOnInfoMetrics"`
 	JobLevelMetricFields        `yaml:",inline"`
@@ -74,7 +74,6 @@ type CustomNamespace struct {
 	Metrics                   []*Metric `yaml:"metrics"`
 	CustomTags                []Tag     `yaml:"customTags"`
 	DimensionNameRequirements []string  `yaml:"dimensionNameRequirements"`
-	RoundingPeriod            *int64    `yaml:"roundingPeriod"`
 	JobLevelMetricFields      `yaml:",inline"`
 }
 
@@ -86,6 +85,7 @@ type Metric struct {
 	Delay                  int64    `yaml:"delay"`
 	NilToZero              *bool    `yaml:"nilToZero"`
 	AddCloudwatchTimestamp *bool    `yaml:"addCloudwatchTimestamp"`
+	RoundingPeriod         *int64   `yaml:"roundingPeriod"`
 }
 
 type Dimension struct {
@@ -341,12 +341,25 @@ func (m *Metric) validateMetric(metricIdx int, parent string, discovery *JobLeve
 			m.Name, metricIdx, parent, mLength, mPeriod,
 		)
 	}
+
+	mRoundingPeriod := m.RoundingPeriod
+	if mRoundingPeriod == nil {
+		if discovery != nil && discovery.RoundingPeriod != nil {
+			mRoundingPeriod = discovery.RoundingPeriod
+		} else {
+			// You're not allowed to take the address of a constant
+			defaultPeriod := model.DefaultPeriodSeconds
+			mRoundingPeriod = &defaultPeriod
+		}
+	}
+
 	m.Length = mLength
 	m.Period = mPeriod
 	m.Delay = mDelay
 	m.NilToZero = mNilToZero
 	m.AddCloudwatchTimestamp = mAddCloudwatchTimestamp
 	m.Statistics = mStatistics
+	m.RoundingPeriod = mRoundingPeriod
 
 	return nil
 }
@@ -362,14 +375,7 @@ func (c *ScrapeConf) toModelConfig() model.JobsConfig {
 		job.Regions = discoveryJob.Regions
 		job.Type = discoveryJob.Type
 		job.DimensionNameRequirements = discoveryJob.DimensionNameRequirements
-		job.RoundingPeriod = discoveryJob.RoundingPeriod
 		job.RecentlyActiveOnly = discoveryJob.RecentlyActiveOnly
-		job.Statistics = discoveryJob.Statistics
-		job.Period = discoveryJob.Period
-		job.Length = discoveryJob.Length
-		job.Delay = discoveryJob.Delay
-		job.NilToZero = discoveryJob.NilToZero
-		job.AddCloudwatchTimestamp = discoveryJob.AddCloudwatchTimestamp
 		job.Roles = toModelRoles(discoveryJob.Roles)
 		job.SearchTags = toModelTags(discoveryJob.SearchTags)
 		job.CustomTags = toModelTags(discoveryJob.CustomTags)
@@ -407,14 +413,7 @@ func (c *ScrapeConf) toModelConfig() model.JobsConfig {
 		job.Name = customNamespaceJob.Name
 		job.Namespace = customNamespaceJob.Namespace
 		job.DimensionNameRequirements = customNamespaceJob.DimensionNameRequirements
-		job.RoundingPeriod = customNamespaceJob.RoundingPeriod
 		job.RecentlyActiveOnly = customNamespaceJob.RecentlyActiveOnly
-		job.Statistics = customNamespaceJob.Statistics
-		job.Period = customNamespaceJob.Period
-		job.Length = customNamespaceJob.Length
-		job.Delay = customNamespaceJob.Delay
-		job.NilToZero = customNamespaceJob.NilToZero
-		job.AddCloudwatchTimestamp = customNamespaceJob.AddCloudwatchTimestamp
 		job.Roles = toModelRoles(customNamespaceJob.Roles)
 		job.CustomTags = toModelTags(customNamespaceJob.CustomTags)
 		job.Metrics = toModelMetricConfig(customNamespaceJob.Metrics)
@@ -468,6 +467,7 @@ func toModelMetricConfig(metrics []*Metric) []*model.MetricConfig {
 			Delay:                  m.Delay,
 			NilToZero:              m.NilToZero,
 			AddCloudwatchTimestamp: m.AddCloudwatchTimestamp,
+			RoundingPeriod:         *m.RoundingPeriod,
 		})
 	}
 	return ret

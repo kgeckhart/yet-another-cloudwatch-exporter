@@ -255,19 +255,21 @@ func TestBuildMetrics(t *testing.T) {
 				},
 				Data: []*model.CloudwatchData{
 					{
-						Metric:     aws.String("CPUUtilization"),
-						Namespace:  aws.String("AWS/ElastiCache"),
-						Statistics: []string{"Average"},
+						Namespace:              "AWS/ElastiCache",
+						GetMetricDataStatistic: "Average",
 						Dimensions: []*model.Dimension{
 							{
 								Name:  "CacheClusterId",
 								Value: "redis-cluster",
 							},
 						},
-						NilToZero:               aws.Bool(false),
-						GetMetricDataPoint:      aws.Float64(1),
-						GetMetricDataTimestamps: ts,
-						ID:                      aws.String("arn:aws:elasticache:us-east-1:123456789012:cluster:redis-cluster"),
+						GetMetricDataDatapoint: aws.Float64(1),
+						GetMetricDataTimestamp: ts,
+						ID:                     "arn:aws:elasticache:us-east-1:123456789012:cluster:redis-cluster",
+						MetricConfig: &model.MetricConfig{
+							NilToZero: aws.Bool(false),
+							Name:      "CPUUtilization",
+						},
 					},
 				},
 			}},
@@ -305,19 +307,21 @@ func TestBuildMetrics(t *testing.T) {
 				},
 				Data: []*model.CloudwatchData{
 					{
-						Metric:     aws.String("CPUUtilization"),
-						Namespace:  aws.String("AWS/ElastiCache"),
-						Statistics: []string{"Average"},
+						Namespace:              "AWS/ElastiCache",
+						GetMetricDataStatistic: "Average",
 						Dimensions: []*model.Dimension{
 							{
 								Name:  "CacheClusterId",
 								Value: "redis-cluster",
 							},
 						},
-						NilToZero:               aws.Bool(false),
-						GetMetricDataPoint:      aws.Float64(1),
-						GetMetricDataTimestamps: ts,
-						ID:                      aws.String("arn:aws:elasticache:us-east-1:123456789012:cluster:redis-cluster"),
+						GetMetricDataDatapoint: aws.Float64(1),
+						GetMetricDataTimestamp: ts,
+						ID:                     "arn:aws:elasticache:us-east-1:123456789012:cluster:redis-cluster",
+						MetricConfig: &model.MetricConfig{
+							NilToZero: aws.Bool(false),
+							Name:      "CPUUtilization",
+						},
 					},
 				},
 			}},
@@ -358,19 +362,21 @@ func TestBuildMetrics(t *testing.T) {
 				},
 				Data: []*model.CloudwatchData{
 					{
-						Metric:     aws.String("CPUUtilization"),
-						Namespace:  aws.String("AWS/ElastiCache"),
-						Statistics: []string{"Average"},
+						Namespace:              "AWS/ElastiCache",
+						GetMetricDataStatistic: "Average",
 						Dimensions: []*model.Dimension{
 							{
 								Name:  "CacheClusterId",
 								Value: "redis-cluster",
 							},
 						},
-						NilToZero:               aws.Bool(false),
-						GetMetricDataPoint:      aws.Float64(1),
-						GetMetricDataTimestamps: ts,
-						ID:                      aws.String("arn:aws:elasticache:us-east-1:123456789012:cluster:redis-cluster"),
+						GetMetricDataDatapoint: aws.Float64(1),
+						GetMetricDataTimestamp: ts,
+						ID:                     "arn:aws:elasticache:us-east-1:123456789012:cluster:redis-cluster",
+						MetricConfig: &model.MetricConfig{
+							NilToZero: aws.Bool(false),
+							Name:      "CPUUtilization",
+						},
 					},
 				},
 			}},

@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
@@ -84,9 +85,9 @@ func toModelDimensions(dimensions []*cloudwatch.Dimension) []*model.Dimension {
 	return modelDimensions
 }
 
-func (c client) GetMetricData(ctx context.Context, logger logging.Logger, getMetricData []*model.CloudwatchData, namespace string, length int64, delay int64, configuredRoundingPeriod *int64) []cloudwatch_client.MetricDataResult {
+func (c client) GetMetricData(ctx context.Context, getMetricData []*model.CloudwatchData, namespace string, startTime time.Time, endTime time.Time) []cloudwatch_client.MetricDataResult {
 	var resp cloudwatch.GetMetricDataOutput
-	filter := createGetMetricDataInput(getMetricData, &namespace, length, delay, configuredRoundingPeriod, logger)
+	filter := createGetMetricDataInput(getMetricData, &namespace, startTime, endTime)
 	if c.logger.IsDebugEnabled() {
 		c.logger.Debug("GetMetricData", "input", filter)
 	}

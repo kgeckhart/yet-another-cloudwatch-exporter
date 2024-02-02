@@ -3,7 +3,6 @@ package job
 import (
 	"context"
 	"fmt"
-	"math"
 	"math/rand"
 	"sync"
 
@@ -17,68 +16,22 @@ func runCustomNamespaceJob(
 	logger logging.Logger,
 	job model.CustomNamespaceJob,
 	clientCloudwatch cloudwatch.Client,
-	metricsPerQuery int,
+	processor GetMetricDataProcessor,
 ) []*model.CloudwatchData {
-	cw := []*model.CloudwatchData{}
-
-	mux := &sync.Mutex{}
-	var wg sync.WaitGroup
-
 	getMetricDatas := getMetricDataForQueriesForCustomNamespace(ctx, job, clientCloudwatch, logger)
 	metricDataLength := len(getMetricDatas)
 	if metricDataLength == 0 {
 		logger.Debug("No metrics data found")
-		return cw
+		return nil
 	}
 
-	maxMetricCount := metricsPerQuery
-	length := getMetricDataInputLength(job.Metrics)
-	partition := int(math.Ceil(float64(metricDataLength) / float64(maxMetricCount)))
-	logger.Debug("GetMetricData partitions", "total", partition)
-
-	wg.Add(partition)
-
-	for i := 0; i < metricDataLength; i += maxMetricCount {
-		go func(i int) {
-			defer wg.Done()
-
-			end := i + maxMetricCount
-			if end > metricDataLength {
-				end = metricDataLength
-			}
-			input := getMetricDatas[i:end]
-			data := clientCloudwatch.GetMetricData(ctx, logger, input, job.Namespace, length, job.Delay, job.RoundingPeriod)
-
-			if data != nil {
-				output := make([]*model.CloudwatchData, 0)
-				for _, result := range data {
-					getMetricData, err := findGetMetricDataByIDForCustomNamespace(input, result.ID)
-					if err == nil {
-						// Copy to avoid a loop closure bug
-						dataPoint := result.Datapoint
-						getMetricData.GetMetricDataPoint = &dataPoint
-						getMetricData.GetMetricDataTimestamps = result.Timestamp
-						output = append(output, getMetricData)
-					}
-				}
-				mux.Lock()
-				cw = append(cw, output...)
-				mux.Unlock()
-			}
-		}(i)
+	getMetricDatas, err := processor.Run(ctx, logger, job.Namespace, getMetricDatas)
+	if err != nil {
+		logger.Error(err, "Failed to GetMetricData")
+		return nil
 	}
 
-	wg.Wait()
-	return cw
-}
-
-func findGetMetricDataByIDForCustomNamespace(getMetricDatas []*model.CloudwatchData, value string) (*model.CloudwatchData, error) {
-	for _, getMetricData := range getMetricDatas {
-		if *getMetricData.MetricID == value {
-			return getMetricData, nil
-		}
-	}
-	return nil, fmt.Errorf("metric with id %s not found", value)
+	return getMetricDatas
 }
 
 func getMetricDataForQueriesForCustomNamespace(
@@ -108,18 +61,17 @@ func getMetricDataForQueriesForCustomNamespace(
 						continue
 					}
 
-					for _, stats := range metric.Statistics {
+					for _, stat := range metric.Statistics {
 						id := fmt.Sprintf("id_%d", rand.Int())
 						data = append(data, &model.CloudwatchData{
-							ID:                     &customNamespaceJob.Name,
-							MetricID:               &id,
-							Metric:                 &metric.Name,
-							Namespace:              &customNamespaceJob.Namespace,
-							Statistics:             []string{stats},
-							NilToZero:              metric.NilToZero,
-							AddCloudwatchTimestamp: metric.AddCloudwatchTimestamp,
-							Dimensions:             cwMetric.Dimensions,
-							Period:                 metric.Period,
+							ID:        customNamespaceJob.Name,
+							Namespace: customNamespaceJob.Namespace,
+							GetMetricDataResult: &model.GetMetricDataResult{
+								ID:        &id,
+								Statistic: stat,
+							},
+							Dimensions:   cwMetric.Dimensions,
+							MetricConfig: metric,
 						})
 					}
 				}
