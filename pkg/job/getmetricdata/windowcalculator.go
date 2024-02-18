@@ -20,15 +20,15 @@ type MetricWindowCalculator struct {
 	clock Clock
 }
 
-// DetermineGetMetricDataWindow computes the start and end time for the GetMetricData request to AWS
+// Calculate computes the start and end time for the GetMetricData request to AWS
 // Always uses the wall clock time as starting point for calculations to ensure that
 // a variety of exporter configurations will work reliably.
-func (m MetricWindowCalculator) Calculate(roundingPeriod time.Duration, length time.Duration, delay time.Duration) (time.Time, time.Time) {
+func (m MetricWindowCalculator) Calculate(period time.Duration, length time.Duration, delay time.Duration) (time.Time, time.Time) {
 	now := m.clock.Now()
-	if roundingPeriod > 0 {
-		// Round down the time to a factor of the period - rounding is recommended by AWS:
+	if period > 0 {
+		// Round down the time to a factor of the period:
 		// https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_GetMetricData.html#API_GetMetricData_RequestParameters
-		now = now.Add(-roundingPeriod / 2).Round(roundingPeriod)
+		now = now.Add(-period / 2).Round(period)
 	}
 
 	startTime := now.Add(-(length + delay))

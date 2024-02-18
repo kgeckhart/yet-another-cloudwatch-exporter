@@ -137,17 +137,17 @@ func (c *ScrapeConf) Load(file string, logger logging.Logger) (model.JobsConfig,
 		}
 	}
 
-	return c.Validate()
+	return c.Validate(logger)
 }
 
-func (c *ScrapeConf) Validate() (model.JobsConfig, error) {
+func (c *ScrapeConf) Validate(logger logging.Logger) (model.JobsConfig, error) {
 	if c.Discovery.Jobs == nil && c.Static == nil && c.CustomNamespace == nil {
 		return model.JobsConfig{}, fmt.Errorf("At least 1 Discovery job, 1 Static or one CustomNamespace must be defined")
 	}
 
 	if c.Discovery.Jobs != nil {
 		for idx, job := range c.Discovery.Jobs {
-			err := job.validateDiscoveryJob(idx)
+			err := job.validateDiscoveryJob(logger, idx)
 			if err != nil {
 				return model.JobsConfig{}, err
 			}
@@ -156,7 +156,7 @@ func (c *ScrapeConf) Validate() (model.JobsConfig, error) {
 
 	if c.CustomNamespace != nil {
 		for idx, job := range c.CustomNamespace {
-			err := job.validateCustomNamespaceJob(idx)
+			err := job.validateCustomNamespaceJob(logger, idx)
 			if err != nil {
 				return model.JobsConfig{}, err
 			}
@@ -178,7 +178,7 @@ func (c *ScrapeConf) Validate() (model.JobsConfig, error) {
 	return c.toModelConfig(), nil
 }
 
-func (j *Job) validateDiscoveryJob(jobIdx int) error {
+func (j *Job) validateDiscoveryJob(logger logging.Logger, jobIdx int) error {
 	if j.Type != "" {
 		if SupportedServices.GetService(j.Type) == nil {
 			return fmt.Errorf("Discovery job [%d]: Service is not in known list!: %s", jobIdx, j.Type)
@@ -215,10 +215,14 @@ func (j *Job) validateDiscoveryJob(jobIdx int) error {
 		}
 	}
 
+	if j.RoundingPeriod != nil {
+		logger.Warn("Discovery job [%s/%d]: Setting rounding period is deprecated. It is always enabled and set to the value of the metric Period.", j.Type, jobIdx)
+	}
+
 	return nil
 }
 
-func (j *CustomNamespace) validateCustomNamespaceJob(jobIdx int) error {
+func (j *CustomNamespace) validateCustomNamespaceJob(logger logging.Logger, jobIdx int) error {
 	if j.Name == "" {
 		return fmt.Errorf("CustomNamespace job [%v]: Name should not be empty", jobIdx)
 	}
@@ -248,6 +252,7 @@ func (j *CustomNamespace) validateCustomNamespaceJob(jobIdx int) error {
 		}
 	}
 
+	logger.Warn("CustomNamespace job [%s/%d]: Setting rounding period is deprecated. It is always enabled and set to the value of the metric Period.", j.Name, jobIdx)
 	return nil
 }
 
@@ -319,9 +324,10 @@ func (m *Metric) validateMetric(metricIdx int, parent string, jobFields *JobLeve
 	if mDelay == 0 {
 		if jobFields != nil && jobFields.Delay != 0 {
 			mDelay = jobFields.Delay
-		} else {
-			mDelay = model.DefaultDelaySeconds
 		}
+		// If the metric or the job did not have delay defined we would typically inject a default. We don't do this
+		// because delay at the metric level has been ignored for an incredibly long time. If we started respecting
+		// a default delay now a lot of configurations would break on release.
 	}
 
 	mNilToZero := m.NilToZero
@@ -369,7 +375,6 @@ func (c *ScrapeConf) toModelConfig() model.JobsConfig {
 		job.Regions = discoveryJob.Regions
 		job.Type = discoveryJob.Type
 		job.DimensionNameRequirements = discoveryJob.DimensionNameRequirements
-		job.RoundingPeriod = discoveryJob.RoundingPeriod
 		job.RecentlyActiveOnly = discoveryJob.RecentlyActiveOnly
 		job.Roles = toModelRoles(discoveryJob.Roles)
 		job.SearchTags = toModelSearchTags(discoveryJob.SearchTags)
@@ -408,7 +413,6 @@ func (c *ScrapeConf) toModelConfig() model.JobsConfig {
 		job.Name = customNamespaceJob.Name
 		job.Namespace = customNamespaceJob.Namespace
 		job.DimensionNameRequirements = customNamespaceJob.DimensionNameRequirements
-		job.RoundingPeriod = customNamespaceJob.RoundingPeriod
 		job.RecentlyActiveOnly = customNamespaceJob.RecentlyActiveOnly
 		job.Roles = toModelRoles(customNamespaceJob.Roles)
 		job.CustomTags = toModelTags(customNamespaceJob.CustomTags)
