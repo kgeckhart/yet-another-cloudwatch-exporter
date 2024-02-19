@@ -303,7 +303,7 @@ func TestProcessor_Run(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := NewProcessor(logging.NewNopLogger(), testClient{GetMetricDataResponse: tt.getMetricDataResponse}, 500, 1)
+			r := NewDefaultProcessor(logging.NewNopLogger(), testClient{GetMetricDataResponse: tt.getMetricDataResponse}, 500, 1)
 			cloudwatchData, err := r.Run(context.Background(), "anything_is_fine", getMetricDataProcessingParamsToCloudwatchData(tt.requests))
 			require.NoError(t, err)
 			require.Len(t, cloudwatchData, len(tt.want))
@@ -352,7 +352,7 @@ func TestProcessor_Run_BatchesByMetricsPerQuery(t *testing.T) {
 			for i := 0; i < tt.numberOfRequests; i++ {
 				requests = append(requests, getSampleMetricDatas(strconv.Itoa(i)))
 			}
-			r := NewProcessor(logging.NewNopLogger(), testClient{GetMetricDataFunc: getMetricDataFunc}, tt.metricsPerQuery, 1)
+			r := NewDefaultProcessor(logging.NewNopLogger(), testClient{GetMetricDataFunc: getMetricDataFunc}, tt.metricsPerQuery, 1)
 			cloudwatchData, err := r.Run(context.Background(), "anything_is_fine", requests)
 			require.NoError(t, err)
 			assert.Len(t, cloudwatchData, tt.numberOfRequests)
