@@ -165,7 +165,7 @@ func (c *ScrapeConf) Validate(logger logging.Logger) (model.JobsConfig, error) {
 
 	if c.Static != nil {
 		for idx, job := range c.Static {
-			err := job.validateStaticJob(idx)
+			err := job.validateStaticJob(logger, idx)
 			if err != nil {
 				return model.JobsConfig{}, err
 			}
@@ -203,7 +203,7 @@ func (j *Job) validateDiscoveryJob(logger logging.Logger, jobIdx int) error {
 		return fmt.Errorf("Discovery job [%s/%d]: Metrics should not be empty", j.Type, jobIdx)
 	}
 	for metricIdx, metric := range j.Metrics {
-		err := metric.validateMetric(metricIdx, parent, &j.JobLevelMetricFields)
+		err := metric.validateMetric(logger, metricIdx, parent, &j.JobLevelMetricFields)
 		if err != nil {
 			return err
 		}
@@ -246,7 +246,7 @@ func (j *CustomNamespace) validateCustomNamespaceJob(logger logging.Logger, jobI
 		return fmt.Errorf("CustomNamespace job [%s/%d]: Metrics should not be empty", j.Name, jobIdx)
 	}
 	for metricIdx, metric := range j.Metrics {
-		err := metric.validateMetric(metricIdx, parent, &j.JobLevelMetricFields)
+		err := metric.validateMetric(logger, metricIdx, parent, &j.JobLevelMetricFields)
 		if err != nil {
 			return err
 		}
@@ -256,7 +256,7 @@ func (j *CustomNamespace) validateCustomNamespaceJob(logger logging.Logger, jobI
 	return nil
 }
 
-func (j *Static) validateStaticJob(jobIdx int) error {
+func (j *Static) validateStaticJob(logger logging.Logger, jobIdx int) error {
 	if j.Name == "" {
 		return fmt.Errorf("Static job [%v]: Name should not be empty", jobIdx)
 	}
@@ -277,7 +277,7 @@ func (j *Static) validateStaticJob(jobIdx int) error {
 		return fmt.Errorf("Static job [%s/%d]: Regions should not be empty", j.Name, jobIdx)
 	}
 	for metricIdx, metric := range j.Metrics {
-		err := metric.validateMetric(metricIdx, parent, nil)
+		err := metric.validateMetric(logger, metricIdx, parent, nil)
 		if err != nil {
 			return err
 		}
@@ -286,7 +286,7 @@ func (j *Static) validateStaticJob(jobIdx int) error {
 	return nil
 }
 
-func (m *Metric) validateMetric(metricIdx int, parent string, jobFields *JobLevelMetricFields) error {
+func (m *Metric) validateMetric(logger logging.Logger, metricIdx int, parent string, jobFields *JobLevelMetricFields) error {
 	if m.Name == "" {
 		return fmt.Errorf("Metric [%s/%d] in %v: Name should not be empty", m.Name, metricIdx, parent)
 	}
@@ -320,14 +320,14 @@ func (m *Metric) validateMetric(metricIdx int, parent string, jobFields *JobLeve
 		}
 	}
 
-	mDelay := m.Delay
-	if mDelay == 0 {
-		if jobFields != nil && jobFields.Delay != 0 {
-			mDelay = jobFields.Delay
-		}
-		// If the metric or the job did not have delay defined we would typically inject a default. We don't do this
-		// because delay at the metric level has been ignored for an incredibly long time. If we started respecting
-		// a default delay now a lot of configurations would break on release.
+	// Delay at the metric level has been ignored for an incredibly long time. If we started respecting metric delay
+	// now a lot of configurations would break on release. This logs a warning for now
+	if m.Delay != 0 {
+		logger.Warn(fmt.Sprintf("Metric [%s/%d] in %v: Metric is configured with delay that has been being ignored. This behavior will change in the future, if your config works now remove this delay to prevent a future issue.", m.Name, metricIdx, parent))
+	}
+	var mDelay int64
+	if jobFields != nil && jobFields.Delay != 0 {
+		mDelay = jobFields.Delay
 	}
 
 	mNilToZero := m.NilToZero

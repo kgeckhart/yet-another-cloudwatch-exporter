@@ -22,28 +22,26 @@ func (b iteratorFactory) Build(data []*model.CloudwatchData) BatchIterator {
 		return nothingToIterate{}
 	}
 
-	if dataHasConsistentTimeParameters(data) {
+	if dataHasConsistentStartTimeParameters(data) {
 		return NewSlicingBatchIterator(b.windowCalculator, b.metricsPerQuery, data)
 	}
 
 	return NewVaryingTimeParameterBatchingIterator(b.windowCalculator, b.metricsPerQuery, data)
 }
 
-func dataHasConsistentTimeParameters(cloudwatchData []*model.CloudwatchData) bool {
-	var length int64
+func dataHasConsistentStartTimeParameters(cloudwatchData []*model.CloudwatchData) bool {
+	// We exclude length from this because historically jobs always took the longest length and changing that
+	// 	without warning could break configs that were only working because a longer length extended the time window
+	//  for the GetMetricData query
 	var delay int64
 	var period int64
 
 	for i, data := range cloudwatchData {
 		// Set initial values on first iteration
 		if i == 0 {
-			length = data.GetMetricDataProcessingParams.Length
 			delay = data.GetMetricDataProcessingParams.Delay
 			period = data.GetMetricDataProcessingParams.Period
 			continue
-		}
-		if data.GetMetricDataProcessingParams.Length != length {
-			return false
 		}
 		if data.GetMetricDataProcessingParams.Delay != delay {
 			return false
@@ -108,7 +106,7 @@ func (t *timeParameterBatchingIterator) HasMore() bool {
 func NewVaryingTimeParameterBatchingIterator(windowCalculator WindowCalculator, metricsPerQuery int, data []*model.CloudwatchData) BatchIterator {
 	batchesByStartAndEndTime := make(map[string][]*model.CloudwatchData)
 	for _, datum := range data {
-		key := fmt.Sprintf("%d|%d|%d", datum.GetMetricDataProcessingParams.Period, datum.GetMetricDataProcessingParams.Length, datum.GetMetricDataProcessingParams.Delay)
+		key := fmt.Sprintf("%d|%d", datum.GetMetricDataProcessingParams.Period, datum.GetMetricDataProcessingParams.Delay)
 		if _, exists := batchesByStartAndEndTime[key]; !exists {
 			batchesByStartAndEndTime[key] = make([]*model.CloudwatchData, 0)
 		}
@@ -121,6 +119,7 @@ func NewVaryingTimeParameterBatchingIterator(windowCalculator WindowCalculator, 
 	// We are ranging a map, and we won't have an index to mark the first iterator
 	isFirst := true
 	for _, batch := range batchesByStartAndEndTime {
+		// TODO need to make sure the longest length is the first element in the slice for start and end time calculation
 		iterator := NewSlicingBatchIterator(windowCalculator, metricsPerQuery, batch)
 		computedSize += iterator.Size()
 		if isFirst {
