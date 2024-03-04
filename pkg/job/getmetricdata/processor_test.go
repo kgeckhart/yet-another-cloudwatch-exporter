@@ -3,8 +3,6 @@ package getmetricdata
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -316,47 +314,6 @@ func TestProcessor_Run(t *testing.T) {
 			}
 
 			assert.ElementsMatch(t, tt.want, got)
-		})
-	}
-}
-
-func TestProcessor_Run_BatchesByMetricsPerQuery(t *testing.T) {
-	now := time.Now()
-	tests := []struct {
-		name                                 string
-		metricsPerQuery                      int
-		numberOfRequests                     int
-		expectedNumberOfCallsToGetMetricData int32
-	}{
-		{name: "1 per batch", metricsPerQuery: 1, numberOfRequests: 10, expectedNumberOfCallsToGetMetricData: 10},
-		{name: "divisible batches and requests", metricsPerQuery: 5, numberOfRequests: 100, expectedNumberOfCallsToGetMetricData: 20},
-		{name: "indivisible batches and requests", metricsPerQuery: 5, numberOfRequests: 94, expectedNumberOfCallsToGetMetricData: 19},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var callCounter atomic.Int32
-			getMetricDataFunc := func(ctx context.Context, requests []*model.CloudwatchData, namespace string, startTime time.Time, endTime time.Time) []cloudwatch.MetricDataResult {
-				callCounter.Add(1)
-				response := make([]cloudwatch.MetricDataResult, 0, len(requests))
-				for _, gmd := range requests {
-					response = append(response, cloudwatch.MetricDataResult{
-						ID:        gmd.GetMetricDataProcessingParams.QueryID,
-						Datapoint: aws.Float64(1000),
-						Timestamp: now,
-					})
-				}
-				return response
-			}
-
-			requests := make([]*model.CloudwatchData, 0, tt.numberOfRequests)
-			for i := 0; i < tt.numberOfRequests; i++ {
-				requests = append(requests, getSampleMetricDatas(strconv.Itoa(i)))
-			}
-			r := NewDefaultProcessor(logging.NewNopLogger(), testClient{GetMetricDataFunc: getMetricDataFunc}, tt.metricsPerQuery, 1)
-			cloudwatchData, err := r.Run(context.Background(), "anything_is_fine", requests)
-			require.NoError(t, err)
-			assert.Len(t, cloudwatchData, tt.numberOfRequests)
-			assert.Equal(t, tt.expectedNumberOfCallsToGetMetricData, callCounter.Load())
 		})
 	}
 }

@@ -23,7 +23,7 @@ func (b iteratorFactory) Build(data []*model.CloudwatchData) BatchIterator {
 	}
 
 	if dataHasConsistentStartTimeParameters(data) {
-		return NewSlicingBatchIterator(b.windowCalculator, b.metricsPerQuery, data)
+		return NewSimpleBatchIterator(b.windowCalculator, b.metricsPerQuery, data, data[0].GetMetricDataProcessingParams)
 	}
 
 	return NewVaryingTimeParameterBatchingIterator(b.windowCalculator, b.metricsPerQuery, data)
@@ -104,23 +104,32 @@ func (t *timeParameterBatchingIterator) HasMore() bool {
 }
 
 func NewVaryingTimeParameterBatchingIterator(windowCalculator WindowCalculator, metricsPerQuery int, data []*model.CloudwatchData) BatchIterator {
-	batchesByStartAndEndTime := make(map[string][]*model.CloudwatchData)
+	batchesByPeriodAndDelay := make(map[string][]*model.CloudwatchData)
+	// Since we do batching by period + delay we still need to keep track of the longest length so start + endtime can
+	// be calculated properly.
+	// It Seemed less allocation heavy to have two maps small maps vs one map with a custom struct of []*model.CloudwatchData + int64
+	longestLengthForBatch := make(map[string]int64)
 	for _, datum := range data {
 		key := fmt.Sprintf("%d|%d", datum.GetMetricDataProcessingParams.Period, datum.GetMetricDataProcessingParams.Delay)
-		if _, exists := batchesByStartAndEndTime[key]; !exists {
-			batchesByStartAndEndTime[key] = make([]*model.CloudwatchData, 0)
+		if _, exists := batchesByPeriodAndDelay[key]; !exists {
+			batchesByPeriodAndDelay[key] = make([]*model.CloudwatchData, 0)
 		}
-		batchesByStartAndEndTime[key] = append(batchesByStartAndEndTime[key], datum)
+		batchesByPeriodAndDelay[key] = append(batchesByPeriodAndDelay[key], datum)
+		if longestLengthForBatch[key] < datum.GetMetricDataProcessingParams.Length {
+			longestLengthForBatch[key] = datum.GetMetricDataProcessingParams.Length
+		}
 	}
 
 	computedSize := 0
 	var firstIterator BatchIterator
-	iterators := make([]BatchIterator, 0, len(batchesByStartAndEndTime)-1)
+	iterators := make([]BatchIterator, 0, len(batchesByPeriodAndDelay)-1)
 	// We are ranging a map, and we won't have an index to mark the first iterator
 	isFirst := true
-	for _, batch := range batchesByStartAndEndTime {
-		// TODO need to make sure the longest length is the first element in the slice for start and end time calculation
-		iterator := NewSlicingBatchIterator(windowCalculator, metricsPerQuery, batch)
+	for key, batch := range batchesByPeriodAndDelay {
+		batchParams := batch[0].GetMetricDataProcessingParams
+		// Make sure to set the length to the longest length for the batch
+		batchParams.Length = longestLengthForBatch[key]
+		iterator := NewSimpleBatchIterator(windowCalculator, metricsPerQuery, batch, batchParams)
 		computedSize += iterator.Size()
 		if isFirst {
 			firstIterator = iterator
@@ -162,6 +171,8 @@ func (s *simpleBatchingIterator) Next() ([]*model.CloudwatchData, time.Time, tim
 		endingIndex = len(s.data)
 	}
 
+	// TODO are we technically doing this https://go.dev/wiki/SliceTricks#batching-with-minimal-allocation and if not
+	// would it change allocations to do this ahead of time?
 	result := s.data[startingIndex:endingIndex]
 	s.currentBatch++
 	return result, s.startTime, s.endTime
@@ -171,10 +182,8 @@ func (s *simpleBatchingIterator) HasMore() bool {
 	return s.currentBatch < s.size
 }
 
-// NewSlicingBatchIterator returns an iterator which slices the data in place based on the metricsPerQuery.
-// TODO are we technically doing this https://go.dev/wiki/SliceTricks#batching-with-minimal-allocation and if not can we?
-func NewSlicingBatchIterator(windowCalculator WindowCalculator, metricsPerQuery int, data []*model.CloudwatchData) BatchIterator {
-	params := data[0].GetMetricDataProcessingParams
+// NewSimpleBatchIterator returns an iterator which slices the data in place based on the metricsPerQuery.
+func NewSimpleBatchIterator(windowCalculator WindowCalculator, metricsPerQuery int, data []*model.CloudwatchData, params *model.GetMetricDataProcessingParams) BatchIterator {
 	startTime, endTime := windowCalculator.Calculate(
 		time.Duration(params.Period)*time.Second,
 		time.Duration(params.Length)*time.Second,
