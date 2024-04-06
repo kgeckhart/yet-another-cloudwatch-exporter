@@ -22,20 +22,22 @@ func TestIteratorFactory_Build(t *testing.T) {
 			expectedIterator: nothingToIterate{},
 		},
 		{
-			name: "input with data returns simple batching",
+			name: "input with consistent delay and period returns simple batching",
 			input: []*model.CloudwatchData{
-				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 10, Delay: 100}},
-				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 10, Delay: 100}},
-				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 10, Delay: 100}},
-				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 10, Delay: 100}},
-				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 10, Delay: 100}},
-				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 10, Delay: 100}},
-				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 10, Delay: 100}},
 				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 10, Delay: 100}},
 				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 10, Delay: 100}},
 				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 10, Delay: 100}},
 			},
 			expectedIterator: &simpleBatchingIterator{},
+		},
+		{
+			name: "input with varying delay and period returns varying time batching",
+			input: []*model.CloudwatchData{
+				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 101, Delay: 100}},
+				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 10, Delay: 100}},
+				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 10, Delay: 100}},
+			},
+			expectedIterator: &timeParameterBatchingIterator{},
 		},
 	}
 
