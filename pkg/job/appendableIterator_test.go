@@ -1,4 +1,4 @@
-package getmetricdata
+package job
 
 import (
 	"strconv"
@@ -28,7 +28,7 @@ func TestIteratorFactory_Build(t *testing.T) {
 				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 10, Delay: 100}},
 				{GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{Period: 10, Delay: 100}},
 			},
-			expectedIterator: &simpleBatchingIterator{},
+			expectedIterator: &appendingBatchingIterator{},
 		},
 	}
 

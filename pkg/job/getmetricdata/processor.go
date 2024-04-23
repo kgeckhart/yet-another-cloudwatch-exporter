@@ -18,11 +18,6 @@ type Client interface {
 	GetMetricData(ctx context.Context, getMetricData []*model.CloudwatchData, namespace string, startTime time.Time, endTime time.Time) []cloudwatch.MetricDataResult
 }
 
-type IteratorFactory interface {
-	// Build returns an ideal batch iterator based on the provided CloudwatchData
-	Build(requests []*model.CloudwatchData, jobMetricLength, jobMetricDelay int64, jobRoundingPeriod *int64) Iterator
-}
-
 type Iterator interface {
 	// Next returns the next batch of CloudWatch data be used when calling GetMetricData and the start + end time for
 	// the GetMetricData call
@@ -39,24 +34,24 @@ type Processor struct {
 	concurrency      int
 	windowCalculator MetricWindowCalculator
 	logger           logging.Logger
-	factory          IteratorFactory
+	iterator         Iterator
 }
 
-func NewDefaultProcessor(logger logging.Logger, client Client, metricsPerQuery int, concurrency int) Processor {
-	return NewProcessor(logger, client, concurrency, MetricWindowCalculator{clock: TimeClock{}}, &iteratorFactory{metricsPerQuery: metricsPerQuery})
+func NewDefaultProcessor(logger logging.Logger, client Client, concurrency int, iterator Iterator) Processor {
+	return NewProcessor(logger, client, concurrency, MetricWindowCalculator{clock: TimeClock{}}, iterator)
 }
 
-func NewProcessor(logger logging.Logger, client Client, concurrency int, windowCalculator MetricWindowCalculator, factory IteratorFactory) Processor {
+func NewProcessor(logger logging.Logger, client Client, concurrency int, windowCalculator MetricWindowCalculator, iterator Iterator) Processor {
 	return Processor{
 		logger:           logger,
 		client:           client,
 		concurrency:      concurrency,
 		windowCalculator: windowCalculator,
-		factory:          factory,
+		iterator:         iterator,
 	}
 }
 
-func (p Processor) Run(ctx context.Context, namespace string, jobMetricLength, jobMetricDelay int64, jobRoundingPeriod *int64, requests []*model.CloudwatchData) ([]*model.CloudwatchData, error) {
+func (p Processor) Run(ctx context.Context, namespace string, requests []*model.CloudwatchData) ([]*model.CloudwatchData, error) {
 	if len(requests) == 0 {
 		return requests, nil
 	}
@@ -64,9 +59,8 @@ func (p Processor) Run(ctx context.Context, namespace string, jobMetricLength, j
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(p.concurrency)
 
-	iterator := p.factory.Build(requests, jobMetricLength, jobMetricDelay, jobRoundingPeriod)
-	for iterator.HasMore() {
-		batch, batchParams := iterator.Next()
+	for p.iterator.HasMore() {
+		batch, batchParams := p.iterator.Next()
 		g.Go(func() error {
 			batch = addQueryIDsToBatch(batch)
 			startTime, endTime := p.windowCalculator.Calculate(toSecondDuration(batchParams.Period), toSecondDuration(batchParams.Length), toSecondDuration(batchParams.Delay))

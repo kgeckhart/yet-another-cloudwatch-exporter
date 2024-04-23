@@ -10,6 +10,7 @@ import (
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/clients/cloudwatch"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/clients/tagging"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/config"
+	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/job/getmetricdata"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/job/maxdimassociator"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/logging"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
@@ -19,8 +20,13 @@ type resourceAssociator interface {
 	AssociateMetricToResource(cwMetric *model.Metric) (*model.TaggedResource, bool)
 }
 
+type cloudwatchDataAppender interface {
+	Done()
+	Append([]*model.CloudwatchData)
+}
+
 type getMetricDataProcessor interface {
-	Run(ctx context.Context, namespace string, jobMetricLength, jobMetricDelay int64, period *int64, requests []*model.CloudwatchData) ([]*model.CloudwatchData, error)
+	Run(ctx context.Context, namespace string, iterator getmetricdata.Iterator) ([]*model.CloudwatchData, error)
 }
 
 func runDiscoveryJob(
@@ -31,6 +37,8 @@ func runDiscoveryJob(
 	clientTag tagging.Client,
 	clientCloudwatch cloudwatch.Client,
 	gmdProcessor getMetricDataProcessor,
+	iterator getmetricdata.Iterator,
+	appender cloudwatchDataAppender,
 ) ([]*model.TaggedResource, []*model.CloudwatchData) {
 	logger.Debug("Get tagged resources")
 
@@ -49,14 +57,10 @@ func runDiscoveryJob(
 	}
 
 	svc := config.SupportedServices.GetService(job.Type)
-	getMetricDatas := getMetricDataForQueries(ctx, logger, job, svc, clientCloudwatch, resources)
-	if len(getMetricDatas) == 0 {
-		logger.Info("No metrics data found")
-		return resources, nil
-	}
+	getMetricDataForQueries(ctx, logger, job, svc, clientCloudwatch, resources, appender)
 
-	jobLength := getLargestLengthForMetrics(job.Metrics)
-	getMetricDatas, err = gmdProcessor.Run(ctx, svc.Namespace, jobLength, job.Delay, job.RoundingPeriod, getMetricDatas)
+	// jobLength := getLargestLengthForMetrics(job.Metrics)
+	getMetricDatas, err := gmdProcessor.Run(ctx, svc.Namespace, iterator)
 	if err != nil {
 		logger.Error(err, "Failed to get metric data")
 		return nil, nil
@@ -65,6 +69,7 @@ func runDiscoveryJob(
 	return resources, getMetricDatas
 }
 
+// TODO what to do with this one?
 func getLargestLengthForMetrics(metrics []*model.MetricConfig) int64 {
 	var length int64
 	for _, metric := range metrics {
@@ -82,10 +87,8 @@ func getMetricDataForQueries(
 	svc *config.ServiceConfig,
 	clientCloudwatch cloudwatch.Client,
 	resources []*model.TaggedResource,
-) []*model.CloudwatchData {
-	mux := &sync.Mutex{}
-	var getMetricDatas []*model.CloudwatchData
-
+	appender cloudwatchDataAppender,
+) {
 	var assoc resourceAssociator
 	if len(svc.DimensionRegexps) > 0 && len(resources) > 0 {
 		assoc = maxdimassociator.NewAssociator(logger, discoveryJob.DimensionsRegexps, resources)
@@ -106,10 +109,7 @@ func getMetricDataForQueries(
 
 			err := clientCloudwatch.ListMetrics(ctx, svc.Namespace, metric, discoveryJob.RecentlyActiveOnly, func(page []*model.Metric) {
 				data := getFilteredMetricDatas(logger, discoveryJob.Type, discoveryJob.ExportedTagsOnMetrics, page, discoveryJob.DimensionNameRequirements, metric, assoc)
-
-				mux.Lock()
-				getMetricDatas = append(getMetricDatas, data...)
-				mux.Unlock()
+				appender.Append(data)
 			})
 			if err != nil {
 				logger.Error(err, "Failed to get full metric list", "metric_name", metric.Name, "namespace", svc.Namespace)
@@ -119,7 +119,7 @@ func getMetricDataForQueries(
 	}
 
 	wg.Wait()
-	return getMetricDatas
+	appender.Done()
 }
 
 type nopAssociator struct{}
