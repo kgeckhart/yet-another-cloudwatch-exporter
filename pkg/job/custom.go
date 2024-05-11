@@ -34,39 +34,38 @@ func runCustomNamespaceJob(
 		return nil
 	}
 
-	getMetricDatas, err = gmdProcessor.Run(ctx, job.Namespace, getMetricDatas)
+	metrics, err := gmdProcessor.Run(ctx, job.Namespace, getMetricDatas)
 	if err != nil {
 		logger.Error(err, "Failed to get metric data")
 		return nil
 	}
 
-	return getMetricDatas
+	return metrics
 }
 
 type ResourceNameDecorator struct {
-	name string
-	next ResourceAppender
+	resource *Resource
+	next     MetricResourceAppender
 }
 
 func NewResourceNameDecorator(
-	next ResourceAppender,
+	next MetricResourceAppender,
 	name string,
 ) *ResourceNameDecorator {
 	return &ResourceNameDecorator{
-		name: name,
-		next: next,
+		resource: &Resource{Name: name},
+		next:     next,
 	}
 }
 
-func (rad *ResourceNameDecorator) Append(ctx context.Context, namespace string, metricConfig *model.MetricConfig, metric *model.Metric) {
-	resource := Resource{Name: rad.name}
-	rad.next.Append(ctx, namespace, metricConfig, metric, &resource)
+func (rnd *ResourceNameDecorator) Append(ctx context.Context, namespace string, metricConfig *model.MetricConfig, metrics []*model.Metric) {
+	rnd.next.Append(ctx, namespace, metricConfig, metrics, Resources{staticResource: rnd.resource})
 }
 
-func (rad *ResourceNameDecorator) Done(ctx context.Context) {
-	rad.next.Done(ctx)
+func (rnd *ResourceNameDecorator) Done() {
+	rnd.next.Done()
 }
 
-func (rad *ResourceNameDecorator) ListAll() []*model.CloudwatchData {
-	return rad.next.ListAll()
+func (rnd *ResourceNameDecorator) ListAll() []*model.CloudwatchData {
+	return rnd.next.ListAll()
 }

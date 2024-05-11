@@ -65,18 +65,19 @@ func runDiscoveryJob(
 		return resources, nil
 	}
 
-	getMetricDatas, err = gmdProcessor.Run(ctx, svc.Namespace, getMetricDatas)
+	metrics, err := gmdProcessor.Run(ctx, svc.Namespace, getMetricDatas)
 	if err != nil {
 		logger.Error(err, "Failed to get metric data")
 		return nil, nil
 	}
 
-	return resources, getMetricDatas
+	return resources, metrics
 }
 
 type ResourceAssociationDecorator struct {
-	associator Associator
-	next       ResourceAppender
+	associator     Associator
+	next           MetricResourceAppender
+	staticResource *Resource
 }
 
 type Associator interface {
@@ -84,7 +85,7 @@ type Associator interface {
 }
 
 func NewDefaultResourceDecorator(
-	next ResourceAppender,
+	next MetricResourceAppender,
 	logger logging.Logger,
 	dimensionRegexps []model.DimensionsRegexp,
 	resources []*model.TaggedResource,
@@ -92,27 +93,49 @@ func NewDefaultResourceDecorator(
 	var associator Associator
 	if len(dimensionRegexps) > 0 && len(resources) > 0 {
 		associator = maxDimAdapter{wrapped: maxdimassociator.NewAssociator(logger, dimensionRegexps, resources)}
+		return NewResourceDecorator(next, nil, associator)
 	} else {
-		associator = globalNameAssociator{}
+		return NewResourceDecorator(next, globalResource, nil)
 	}
-	return NewResourceDecorator(next, associator)
 }
 
 // NewResourceDecorator is an injectable function for testing purposes
-func NewResourceDecorator(next ResourceAppender, associator Associator) *ResourceAssociationDecorator {
+func NewResourceDecorator(next MetricResourceAppender, staticResource *Resource, associator Associator) *ResourceAssociationDecorator {
 	return &ResourceAssociationDecorator{
-		associator: associator,
-		next:       next,
+		staticResource: staticResource,
+		associator:     associator,
+		next:           next,
 	}
 }
 
-func (rad *ResourceAssociationDecorator) Append(ctx context.Context, namespace string, metricConfig *model.MetricConfig, metric *model.Metric) {
-	resource := rad.associator.MetricToResource(metric)
-	rad.next.Append(ctx, namespace, metricConfig, metric, resource)
+func (rad *ResourceAssociationDecorator) Append(ctx context.Context, namespace string, metricConfig *model.MetricConfig, metrics []*model.Metric) {
+	if rad.staticResource != nil {
+		rad.next.Append(ctx, namespace, metricConfig, metrics, Resources{staticResource: rad.staticResource})
+		return
+	}
+
+	resources := make([]*Resource, 0, len(metrics))
+	// Slightly modified version of compact to work cleanly with two arrays (both are taken from https://stackoverflow.com/a/20551116)
+	outputI := 0
+	for _, metric := range metrics {
+		resource := rad.associator.MetricToResource(metric)
+		if resource != nil {
+			metrics[outputI] = metric
+			resources[outputI] = resource
+			outputI++
+		}
+	}
+	for i := outputI; i < len(metrics); i++ {
+		metrics[i] = nil
+	}
+	metrics = metrics[:outputI]
+	resources = resources[:outputI]
+
+	rad.next.Append(ctx, namespace, metricConfig, metrics, Resources{associatedResources: resources})
 }
 
-func (rad *ResourceAssociationDecorator) Done(ctx context.Context) {
-	rad.next.Done(ctx)
+func (rad *ResourceAssociationDecorator) Done() {
+	rad.next.Done()
 }
 
 func (rad *ResourceAssociationDecorator) ListAll() []*model.CloudwatchData {
@@ -122,12 +145,6 @@ func (rad *ResourceAssociationDecorator) ListAll() []*model.CloudwatchData {
 var globalResource = &Resource{
 	Name: "global",
 	Tags: nil,
-}
-
-type globalNameAssociator struct{}
-
-func (ns globalNameAssociator) MetricToResource(_ *model.Metric) *Resource {
-	return globalResource
 }
 
 type maxDimAdapter struct {
