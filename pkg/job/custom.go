@@ -2,9 +2,8 @@ package job
 
 import (
 	"context"
-	"sync"
 
-	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/clients/cloudwatch"
+	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/job/listmetrics"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/logging"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
 )
@@ -13,86 +12,61 @@ func runCustomNamespaceJob(
 	ctx context.Context,
 	logger logging.Logger,
 	job model.CustomNamespaceJob,
-	clientCloudwatch cloudwatch.Client,
+	lmProcessor listMetricsProcessor,
 	gmdProcessor getMetricDataProcessor,
 ) []*model.CloudwatchData {
-	cloudwatchDatas := getMetricDataForQueriesForCustomNamespace(ctx, job, clientCloudwatch, logger)
-	if len(cloudwatchDatas) == 0 {
-		logger.Debug("No metrics data found")
+	params := listmetrics.ProcessingParams{
+		Namespace:                 job.Namespace,
+		Metrics:                   job.Metrics,
+		RecentlyActiveOnly:        job.RecentlyActiveOnly,
+		DimensionNameRequirements: job.DimensionNameRequirements,
+	}
+	cwda := NewCloudwatchDataAccumulator()
+	a := NewResourceNameDecorator(cwda, job.Name)
+	err := lmProcessor.Run(ctx, params, a)
+	if err != nil {
+		logger.Error(err, "Failed to list metric data")
+		return nil
+	}
+	getMetricDatas := a.ListAll()
+	if len(getMetricDatas) == 0 {
+		logger.Info("No metrics data found")
 		return nil
 	}
 
-	var err error
-	cloudwatchDatas, err = gmdProcessor.Run(ctx, job.Namespace, cloudwatchDatas)
+	getMetricDatas, err = gmdProcessor.Run(ctx, job.Namespace, getMetricDatas)
 	if err != nil {
 		logger.Error(err, "Failed to get metric data")
 		return nil
 	}
 
-	return cloudwatchDatas
+	return getMetricDatas
 }
 
-func getMetricDataForQueriesForCustomNamespace(
-	ctx context.Context,
-	customNamespaceJob model.CustomNamespaceJob,
-	clientCloudwatch cloudwatch.Client,
-	logger logging.Logger,
-) []*model.CloudwatchData {
-	mux := &sync.Mutex{}
-	var getMetricDatas []*model.CloudwatchData
+type ResourceNameDecorator struct {
+	name string
+	next ResourceAppender
+}
 
-	var wg sync.WaitGroup
-	wg.Add(len(customNamespaceJob.Metrics))
-
-	for _, metric := range customNamespaceJob.Metrics {
-		// For every metric of the job get the full list of metrics.
-		// This includes, for this metric the possible combinations
-		// of dimensions and value of dimensions with data.
-
-		go func(metric *model.MetricConfig) {
-			defer wg.Done()
-			err := clientCloudwatch.ListMetrics(ctx, customNamespaceJob.Namespace, metric, customNamespaceJob.RecentlyActiveOnly, func(page []*model.Metric) {
-				var data []*model.CloudwatchData
-
-				for _, cwMetric := range page {
-					if len(customNamespaceJob.DimensionNameRequirements) > 0 && !metricDimensionsMatchNames(cwMetric, customNamespaceJob.DimensionNameRequirements) {
-						continue
-					}
-
-					for _, stat := range metric.Statistics {
-						data = append(data, &model.CloudwatchData{
-							MetricName:   metric.Name,
-							ResourceName: customNamespaceJob.Name,
-							Namespace:    customNamespaceJob.Namespace,
-							Dimensions:   cwMetric.Dimensions,
-							GetMetricDataProcessingParams: &model.GetMetricDataProcessingParams{
-								Period:    metric.Period,
-								Length:    metric.Length,
-								Delay:     metric.Delay,
-								Statistic: stat,
-							},
-							MetricMigrationParams: model.MetricMigrationParams{
-								NilToZero:              metric.NilToZero,
-								AddCloudwatchTimestamp: metric.AddCloudwatchTimestamp,
-							},
-							Tags:                      nil,
-							GetMetricDataResult:       nil,
-							GetMetricStatisticsResult: nil,
-						})
-					}
-				}
-
-				mux.Lock()
-				getMetricDatas = append(getMetricDatas, data...)
-				mux.Unlock()
-			})
-			if err != nil {
-				logger.Error(err, "Failed to get full metric list", "metric_name", metric.Name, "namespace", customNamespaceJob.Namespace)
-				return
-			}
-		}(metric)
+func NewResourceNameDecorator(
+	next ResourceAppender,
+	name string,
+) *ResourceNameDecorator {
+	return &ResourceNameDecorator{
+		name: name,
+		next: next,
 	}
+}
 
-	wg.Wait()
-	return getMetricDatas
+func (rad *ResourceNameDecorator) Append(ctx context.Context, namespace string, metricConfig *model.MetricConfig, metric *model.Metric) {
+	resource := Resource{Name: rad.name}
+	rad.next.Append(ctx, namespace, metricConfig, metric, &resource)
+}
+
+func (rad *ResourceNameDecorator) Done(ctx context.Context) {
+	rad.next.Done(ctx)
+}
+
+func (rad *ResourceNameDecorator) ListAll() []*model.CloudwatchData {
+	return rad.next.ListAll()
 }
