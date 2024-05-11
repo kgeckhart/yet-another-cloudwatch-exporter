@@ -94,9 +94,9 @@ func NewDefaultResourceDecorator(
 	if len(dimensionRegexps) > 0 && len(resources) > 0 {
 		associator = maxDimAdapter{wrapped: maxdimassociator.NewAssociator(logger, dimensionRegexps, resources)}
 		return NewResourceDecorator(next, nil, associator)
-	} else {
-		return NewResourceDecorator(next, globalResource, nil)
 	}
+
+	return NewResourceDecorator(next, globalResource, nil)
 }
 
 // NewResourceDecorator is an injectable function for testing purposes
@@ -114,7 +114,7 @@ func (rad *ResourceAssociationDecorator) Append(ctx context.Context, namespace s
 		return
 	}
 
-	resources := make([]*Resource, 0, len(metrics))
+	resources := make([]*Resource, len(metrics), len(metrics))
 	// Slightly modified version of compact to work cleanly with two arrays (both are taken from https://stackoverflow.com/a/20551116)
 	outputI := 0
 	for _, metric := range metrics {
