@@ -186,6 +186,13 @@ func (assoc Associator) AssociateMetricToResource(cwMetric *model.Metric) (*mode
 	// correctly map the dimensions names to a resource arn regex,
 	// but we still want to keep the metric and create a "global" metric.
 	logger.Debug("associate loop end", "skip", mappingFound)
+	if !mappingFound && logger.IsDebugEnabled() {
+		dimensionStrings := make([]string, 0, len(cwMetric.Dimensions))
+		for _, dim := range cwMetric.Dimensions {
+			dimensionStrings = append(dimensions, fmt.Sprintf("%s=%s", dim.Name, dim.Value))
+		}
+		logger.Debug("skipping metric unmatched by associator", "dimensions", strings.Join(dimensionStrings, ","))
+	}
 	return nil, mappingFound
 }
 
