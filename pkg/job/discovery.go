@@ -52,7 +52,7 @@ func runDiscoveryJob(
 		RecentlyActiveOnly:        job.RecentlyActiveOnly,
 		DimensionNameRequirements: job.DimensionNameRequirements,
 	}
-	a := appender.New(logger, appender.ResourceAssociation{
+	a := appender.New(logger, appender.ResourceAssociationStrategy{
 		Resources:        resources,
 		DimensionRegexps: job.DimensionsRegexps,
 		TagsOnMetrics:    job.ExportedTagsOnMetrics,

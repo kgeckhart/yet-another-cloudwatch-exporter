@@ -8,15 +8,14 @@ import (
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
 )
 
-type ResourceAssociation struct {
+type ResourceAssociationStrategy struct {
 	Resources        []*model.TaggedResource
 	DimensionRegexps []model.DimensionsRegexp
 	TagsOnMetrics    []string
 }
 
-type ResourceAssociationDecorator struct {
+type ResourceAssociation struct {
 	associator     Associator
-	next           *CloudwatchDataAccumulator
 	staticResource *Resource
 }
 
@@ -24,34 +23,31 @@ type Associator interface {
 	MetricToResource(cwMetric *model.Metric) *Resource
 }
 
-func (ra ResourceAssociation) new(
-	next *CloudwatchDataAccumulator,
+func (ra ResourceAssociationStrategy) new(
 	logger logging.Logger,
-) Appender {
+) metricResourceEnricher {
 	var associator Associator
 	if len(ra.DimensionRegexps) > 0 && len(ra.Resources) > 0 {
 		associator = maxDimAdapter{wrapped: maxdimassociator.NewAssociator(logger, ra.DimensionRegexps, ra.Resources)}
-		return NewResourceDecorator(next, nil, associator)
+		return NewResourceAssociation(nil, associator)
 	}
 
-	return NewResourceDecorator(next, globalResource, nil)
+	return NewResourceAssociation(globalResource, nil)
 }
 
-// NewResourceDecorator is an injectable function for testing purposes
-func NewResourceDecorator(next *CloudwatchDataAccumulator, staticResource *Resource, associator Associator) *ResourceAssociationDecorator {
-	return &ResourceAssociationDecorator{
+func (ra ResourceAssociationStrategy) resourceTagsOnMetrics() []string {
+	return ra.TagsOnMetrics
+}
+
+// NewResourceAssociation is an injectable function for testing purposes
+func NewResourceAssociation(staticResource *Resource, associator Associator) *ResourceAssociation {
+	return &ResourceAssociation{
 		staticResource: staticResource,
 		associator:     associator,
-		next:           next,
 	}
 }
 
-func (rad *ResourceAssociationDecorator) Append(ctx context.Context, namespace string, metricConfig *model.MetricConfig, metrics []*model.Metric) {
-	if rad.staticResource != nil {
-		rad.next.Append(ctx, namespace, metricConfig, metrics, resources{staticResource: rad.staticResource})
-		return
-	}
-
+func (rad *ResourceAssociation) Enrich(_ context.Context, metrics []*model.Metric) ([]*model.Metric, Resources) {
 	associatedResources := make([]*Resource, len(metrics))
 	// Slightly modified version of compact to work cleanly with two arrays (both are taken from https://stackoverflow.com/a/20551116)
 	outputI := 0
@@ -69,15 +65,7 @@ func (rad *ResourceAssociationDecorator) Append(ctx context.Context, namespace s
 	metrics = metrics[:outputI]
 	associatedResources = associatedResources[:outputI]
 
-	rad.next.Append(ctx, namespace, metricConfig, metrics, resources{associatedResources: associatedResources})
-}
-
-func (rad *ResourceAssociationDecorator) Done() {
-	rad.next.Done()
-}
-
-func (rad *ResourceAssociationDecorator) ListAll() []*model.CloudwatchData {
-	return rad.next.ListAll()
+	return metrics, Resources{associatedResources: associatedResources}
 }
 
 var globalResource = &Resource{

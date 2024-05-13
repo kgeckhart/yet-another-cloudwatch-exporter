@@ -7,30 +7,24 @@ import (
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
 )
 
-type StaticResource struct {
+type StaticResourceStrategy struct {
 	Name string
 }
 
-type ResourceNameDecorator struct {
+type ResourceName struct {
 	resource *Resource
-	next     *CloudwatchDataAccumulator
 }
 
-func (sr StaticResource) new(next *CloudwatchDataAccumulator, _ logging.Logger) Appender {
-	return &ResourceNameDecorator{
+func (sr StaticResourceStrategy) new(_ logging.Logger) metricResourceEnricher {
+	return &ResourceName{
 		resource: &Resource{Name: sr.Name},
-		next:     next,
 	}
 }
 
-func (rnd *ResourceNameDecorator) Append(ctx context.Context, namespace string, metricConfig *model.MetricConfig, metrics []*model.Metric) {
-	rnd.next.Append(ctx, namespace, metricConfig, metrics, resources{staticResource: rnd.resource})
+func (sr StaticResourceStrategy) resourceTagsOnMetrics() []string {
+	return nil
 }
 
-func (rnd *ResourceNameDecorator) Done() {
-	rnd.next.Done()
-}
-
-func (rnd *ResourceNameDecorator) ListAll() []*model.CloudwatchData {
-	return rnd.next.ListAll()
+func (rnd *ResourceName) Enrich(_ context.Context, metrics []*model.Metric) ([]*model.Metric, Resources) {
+	return metrics, Resources{staticResource: rnd.resource}
 }

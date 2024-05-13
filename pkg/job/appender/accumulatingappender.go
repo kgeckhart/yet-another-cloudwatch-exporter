@@ -8,7 +8,7 @@ import (
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
 )
 
-type CloudwatchDataAccumulator struct {
+type Accumulator struct {
 	mux                   sync.Mutex
 	batches               [][]*model.CloudwatchData
 	flattened             []*model.CloudwatchData
@@ -16,20 +16,16 @@ type CloudwatchDataAccumulator struct {
 	resourceTagsOnMetrics []string
 }
 
-func NewCloudwatchDataAccumulator(resourceTagsOnMetrics ...[]string) *CloudwatchDataAccumulator {
-	var tagsOnMetrics []string
-	if len(resourceTagsOnMetrics) == 1 {
-		tagsOnMetrics = resourceTagsOnMetrics[0]
-	}
-	return &CloudwatchDataAccumulator{
+func NewAccumulator(resourceTagsOnMetrics []string) *Accumulator {
+	return &Accumulator{
 		mux:                   sync.Mutex{},
 		batches:               [][]*model.CloudwatchData{},
 		done:                  atomic.Bool{},
-		resourceTagsOnMetrics: tagsOnMetrics,
+		resourceTagsOnMetrics: resourceTagsOnMetrics,
 	}
 }
 
-func (a *CloudwatchDataAccumulator) Append(_ context.Context, namespace string, metricConfig *model.MetricConfig, metrics []*model.Metric, resources resources) {
+func (a *Accumulator) Append(_ context.Context, namespace string, metricConfig *model.MetricConfig, metrics []*model.Metric, resources Resources) {
 	if a.done.Load() {
 		return
 	}
@@ -90,7 +86,7 @@ func (a *CloudwatchDataAccumulator) Append(_ context.Context, namespace string, 
 	a.batches = append(a.batches, batch)
 }
 
-func (a *CloudwatchDataAccumulator) Done() {
+func (a *Accumulator) Done() {
 	a.done.CompareAndSwap(false, true)
 	flattenedLength := 0
 	for _, batch := range a.batches {
@@ -103,7 +99,7 @@ func (a *CloudwatchDataAccumulator) Done() {
 	}
 }
 
-func (a *CloudwatchDataAccumulator) ListAll() []*model.CloudwatchData {
+func (a *Accumulator) ListAll() []*model.CloudwatchData {
 	if !a.done.Load() {
 		return nil
 	}

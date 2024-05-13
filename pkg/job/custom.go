@@ -22,7 +22,7 @@ func runCustomNamespaceJob(
 		RecentlyActiveOnly:        job.RecentlyActiveOnly,
 		DimensionNameRequirements: job.DimensionNameRequirements,
 	}
-	a := appender.New(logger, appender.StaticResource{Name: job.Name})
+	a := appender.New(logger, appender.StaticResourceStrategy{Name: job.Name})
 	err := lmProcessor.Run(ctx, params, a)
 	if err != nil {
 		logger.Error(err, "Failed to list metric data")

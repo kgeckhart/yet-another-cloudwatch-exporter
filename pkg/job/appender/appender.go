@@ -7,12 +7,6 @@ import (
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
 )
 
-type Appender interface {
-	Append(ctx context.Context, namespace string, metricConfig *model.MetricConfig, metrics []*model.Metric)
-	Done()
-	ListAll() []*model.CloudwatchData
-}
-
 type Resource struct {
 	// Name is an identifiable value for the resource and is variable dependent on the match made
 	//	It will be the AWS ARN (Amazon Resource Name) if a unique resource was found
@@ -23,15 +17,41 @@ type Resource struct {
 	Tags []model.Tag
 }
 
-type resources struct {
+type Resources struct {
 	staticResource      *Resource
 	associatedResources []*Resource
 }
 
-type ResourceStrategy interface {
-	new(next *CloudwatchDataAccumulator, logger logging.Logger) Appender
+type metricResourceEnricher interface {
+	Enrich(ctx context.Context, metrics []*model.Metric) ([]*model.Metric, Resources)
 }
 
-func New(logger logging.Logger, strategy ResourceStrategy) Appender {
-	return strategy.new(NewCloudwatchDataAccumulator(), logger)
+type ResourceEnrichmentStrategy interface {
+	new(logger logging.Logger) metricResourceEnricher
+	resourceTagsOnMetrics() []string
+}
+
+type Appender struct {
+	resourceEnricher metricResourceEnricher
+	accumulator      *Accumulator
+}
+
+func (a Appender) Append(ctx context.Context, namespace string, metricConfig *model.MetricConfig, metrics []*model.Metric) {
+	metrics, metricResources := a.resourceEnricher.Enrich(ctx, metrics)
+	a.accumulator.Append(ctx, namespace, metricConfig, metrics, metricResources)
+}
+
+func (a Appender) Done() {
+	a.accumulator.Done()
+}
+
+func (a Appender) ListAll() []*model.CloudwatchData {
+	return a.accumulator.ListAll()
+}
+
+func New(logger logging.Logger, strategy ResourceEnrichmentStrategy) *Appender {
+	return &Appender{
+		resourceEnricher: strategy.new(logger),
+		accumulator:      NewAccumulator(strategy.resourceTagsOnMetrics()),
+	}
 }
