@@ -38,9 +38,9 @@ func ScrapeAwsData(
 	awsInfoData := make([]model.TaggedResourceResult, 0)
 	var wg sync.WaitGroup
 
-	for _, job := range jobsCfg.DiscoveryJobs {
-		for _, role := range job.Roles {
-			for _, region := range job.Regions {
+	for _, discoveryJob := range jobsCfg.DiscoveryJobs {
+		for _, role := range discoveryJob.Roles {
+			for _, region := range discoveryJob.Regions {
 				wg.Add(1)
 				go func(discoveryJob model.DiscoveryJob, region string, role model.Role) {
 					defer wg.Done()
@@ -81,7 +81,7 @@ func ScrapeAwsData(
 						cwData = append(cwData, metricResult)
 						mux.Unlock()
 					}
-				}(job, region, role)
+				}(discoveryJob, region, role)
 			}
 		}
 	}
@@ -117,9 +117,9 @@ func ScrapeAwsData(
 		}
 	}
 
-	for _, job := range jobsCfg.CustomNamespaceJobs {
-		for _, role := range job.Roles {
-			for _, region := range job.Regions {
+	for _, customNamespaceJob := range jobsCfg.CustomNamespaceJobs {
+		for _, role := range customNamespaceJob.Roles {
+			for _, region := range customNamespaceJob.Regions {
 				wg.Add(1)
 				go func(customNamespaceJob model.CustomNamespaceJob, region string, role model.Role) {
 					defer wg.Done()
@@ -145,7 +145,7 @@ func ScrapeAwsData(
 					mux.Lock()
 					cwData = append(cwData, metricResult)
 					mux.Unlock()
-				}(job, region, role)
+				}(customNamespaceJob, region, role)
 			}
 		}
 	}
