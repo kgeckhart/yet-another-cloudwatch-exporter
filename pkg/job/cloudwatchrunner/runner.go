@@ -1,4 +1,4 @@
-package job
+package cloudwatchrunner
 
 import (
 	"context"
@@ -41,11 +41,11 @@ type Params struct {
 	GetMetricDataMetricsPerQuery int
 }
 
-func NewRunner(logger logging.Logger, factory clients.Factory, params Params, config Job) *Runner {
+func New(logger logging.Logger, factory clients.Factory, params Params, job Job) *Runner {
 	cloudwatchClient := factory.GetCloudwatchClient(params.Region, params.Role, params.CloudwatchConcurrency)
 	lmProcessor := listmetrics.NewDefaultProcessor(logger, cloudwatchClient)
 	gmdProcessor := getmetricdata.NewDefaultProcessor(logger, cloudwatchClient, params.GetMetricDataMetricsPerQuery, params.CloudwatchConcurrency.GetMetricData)
-	return internalNew(logger, lmProcessor, gmdProcessor, params, config)
+	return internalNew(logger, lmProcessor, gmdProcessor, params, job)
 }
 
 type Runner struct {

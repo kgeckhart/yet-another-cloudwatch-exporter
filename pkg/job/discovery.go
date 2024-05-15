@@ -19,6 +19,10 @@ type resourceAssociator interface {
 	AssociateMetricToResource(cwMetric *model.Metric) (*model.TaggedResource, bool)
 }
 
+type getMetricDataProcessor interface {
+	Run(ctx context.Context, namespace string, requests []*model.CloudwatchData) ([]*model.CloudwatchData, error)
+}
+
 func runDiscoveryJob(
 	ctx context.Context,
 	logger logging.Logger,
