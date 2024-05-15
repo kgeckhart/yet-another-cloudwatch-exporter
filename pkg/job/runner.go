@@ -2,88 +2,96 @@ package job
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/clients"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/clients/cloudwatch"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/job/appender"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/job/getmetricdata"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/job/listmetrics"
+	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/job/resourcemetadata"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/logging"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
 )
 
-type Config interface {
+type ResourceEnrichment interface {
+	Create(logger logging.Logger) resourcemetadata.MetricResourceEnricher
+}
+
+type Job interface {
 	Namespace() string
+	CustomTags() []model.Tag
 	listMetricsParams() listmetrics.ProcessingParams
-	resourceEnrichmentStrategy() appender.ResourceEnrichmentStrategy
+	resourceEnrichment() ResourceEnrichment
+}
+
+type getMetricDataProcessor interface {
+	Run(ctx context.Context, namespace string, requests []*model.CloudwatchData) ([]*model.CloudwatchData, error)
+}
+
+type listMetricsProcessor interface {
+	Run(ctx context.Context, params listmetrics.ProcessingParams, appender listmetrics.Appender) error
 }
 
 type Params struct {
-	Region                string
-	Role                  model.Role
-	CloudwatchConcurrency cloudwatch.ConcurrencyConfig
-	// TODO do we really need to configure this it's a billing related setting?
+	Region                       string
+	Role                         model.Role
+	AccountID                    string
+	CloudwatchConcurrency        cloudwatch.ConcurrencyConfig
 	GetMetricDataMetricsPerQuery int
+}
+
+func NewRunner(logger logging.Logger, factory clients.Factory, params Params, config Job) *Runner {
+	cloudwatchClient := factory.GetCloudwatchClient(params.Region, params.Role, params.CloudwatchConcurrency)
+	lmProcessor := listmetrics.NewDefaultProcessor(logger, cloudwatchClient)
+	gmdProcessor := getmetricdata.NewDefaultProcessor(logger, cloudwatchClient, params.GetMetricDataMetricsPerQuery, params.CloudwatchConcurrency.GetMetricData)
+	return internalNew(logger, lmProcessor, gmdProcessor, params, config)
 }
 
 type Runner struct {
 	logger        logging.Logger
-	config        Config
+	job           Job
 	listMetrics   listMetricsProcessor
 	getMetricData getMetricDataProcessor
-}
-
-func New(logger logging.Logger, factory clients.Factory, params Params, config Config) *Runner {
-	cloudwatchClient := factory.GetCloudwatchClient(params.Region, params.Role, params.CloudwatchConcurrency)
-	gmdProcessor := getmetricdata.NewDefaultProcessor(logger, cloudwatchClient, params.GetMetricDataMetricsPerQuery, params.CloudwatchConcurrency.GetMetricData)
-	lmProcessor := listmetrics.NewDefaultProcessor(logger, cloudwatchClient)
-	return internalNew(logger, lmProcessor, gmdProcessor, config)
+	params        Params
 }
 
 // internalNew allows an injection point for interfaces
-func internalNew(logger logging.Logger, listMetrics listMetricsProcessor, getMetricData getMetricDataProcessor, config Config) *Runner {
+func internalNew(logger logging.Logger, listMetrics listMetricsProcessor, getMetricData getMetricDataProcessor, params Params, job Job) *Runner {
 	return &Runner{
 		logger:        logger,
-		config:        config,
+		job:           job,
 		listMetrics:   listMetrics,
 		getMetricData: getMetricData,
+		params:        params,
 	}
 }
 
-func (r *Runner) Run(ctx context.Context) ([]*model.TaggedResource, []*model.CloudwatchData) {
-	r.logger.Debug("Get tagged resources")
+func (r *Runner) Run(ctx context.Context) (*model.CloudwatchMetricResult, error) {
+	a := appender.New(r.job.resourceEnrichment().Create(r.logger))
 
-	// resources, err := clientTag.GetResources(ctx, job, region)
-	// if err != nil {
-	// 	if errors.Is(err, tagging.ErrExpectedToFindResources) {
-	// 		logger.Error(err, "No tagged resources made it through filtering")
-	// 	} else {
-	// 		logger.Error(err, "Couldn't describe resources")
-	// 	}
-	// 	return nil, nil
-	// }
-	//
-	// if len(resources) == 0 {
-	// 	logger.Debug("No tagged resources", "region", region, "namespace", job.Type)
-	// }
-
-	a := appender.New(r.logger, r.config.resourceEnrichmentStrategy())
-	err := r.listMetrics.Run(ctx, r.config.listMetricsParams(), a)
+	err := r.listMetrics.Run(ctx, r.job.listMetricsParams(), a)
 	if err != nil {
-		r.logger.Error(err, "Failed to list metric data")
-		return nil, nil
+		return nil, fmt.Errorf("failed to list metric data: %w", err)
 	}
+
 	getMetricDatas := a.ListAll()
 	if len(getMetricDatas) == 0 {
-		r.logger.Info("No metrics data found")
-		// return resources, nil
-	}
-
-	metrics, err := r.getMetricData.Run(ctx, r.config.Namespace(), getMetricDatas)
-	if err != nil {
-		r.logger.Error(err, "Failed to get metric data")
 		return nil, nil
 	}
 
-	return nil, metrics
+	metrics, err := r.getMetricData.Run(ctx, r.job.Namespace(), getMetricDatas)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get metric data: %w", err)
+	}
+
+	result := &model.CloudwatchMetricResult{
+		Context: &model.ScrapeContext{
+			Region:     r.params.Region,
+			AccountID:  r.params.AccountID,
+			CustomTags: r.job.CustomTags(),
+		},
+		Data: metrics,
+	}
+	return result, nil
 }

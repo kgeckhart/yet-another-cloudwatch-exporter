@@ -3,7 +3,11 @@ package job
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/config"
+	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/job/maxdimassociator"
+	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/logging"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
 )
 
@@ -406,29 +410,27 @@ func Test_getFilteredMetricDatas(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		// TODO tests are fun
-		t.Log(tt.name)
-		// t.Run(tt.name, func(t *testing.T) {
-		// 	assoc := associator.NewMaxDimensions(logging.NewNopLogger(), tt.args.dimensionRegexps, tt.args.resources)
-		// 	metricDatas := getFilteredMetricDatas(logging.NewNopLogger(), tt.args.namespace, tt.args.tagsOnMetrics, tt.args.metricsList, tt.args.dimensionNameRequirements, tt.args.m, assoc)
-		// 	if len(metricDatas) != len(tt.wantGetMetricsData) {
-		// 		t.Errorf("len(getFilteredMetricDatas()) = %v, want %v", len(metricDatas), len(tt.wantGetMetricsData))
-		// 	}
-		// 	for i, got := range metricDatas {
-		// 		want := tt.wantGetMetricsData[i]
-		// 		assert.Equal(t, want.MetricName, got.MetricName)
-		// 		assert.Equal(t, want.ResourceName, got.ResourceName)
-		// 		assert.Equal(t, want.Namespace, got.Namespace)
-		// 		assert.ElementsMatch(t, want.Dimensions, got.Dimensions)
-		// 		assert.ElementsMatch(t, want.Tags, got.Tags)
-		// 		assert.Equal(t, want.MetricMigrationParams, got.MetricMigrationParams)
-		// 		assert.Equal(t, want.GetMetricDataProcessingParams.Statistic, got.GetMetricDataProcessingParams.Statistic)
-		// 		assert.Equal(t, want.GetMetricDataProcessingParams.Length, got.GetMetricDataProcessingParams.Length)
-		// 		assert.Equal(t, want.GetMetricDataProcessingParams.Period, got.GetMetricDataProcessingParams.Period)
-		// 		assert.Equal(t, want.GetMetricDataProcessingParams.Delay, got.GetMetricDataProcessingParams.Delay)
-		// 		assert.Nil(t, got.GetMetricDataResult)
-		// 		assert.Nil(t, got.GetMetricStatisticsResult)
-		// 	}
-		// })
+		t.Run(tt.name, func(t *testing.T) {
+			assoc := maxdimassociator.NewAssociator(logging.NewNopLogger(), tt.args.dimensionRegexps, tt.args.resources)
+			metricDatas := getFilteredMetricDatas(logging.NewNopLogger(), tt.args.namespace, tt.args.tagsOnMetrics, tt.args.metricsList, tt.args.dimensionNameRequirements, tt.args.m, assoc)
+			if len(metricDatas) != len(tt.wantGetMetricsData) {
+				t.Errorf("len(getFilteredMetricDatas()) = %v, want %v", len(metricDatas), len(tt.wantGetMetricsData))
+			}
+			for i, got := range metricDatas {
+				want := tt.wantGetMetricsData[i]
+				assert.Equal(t, want.MetricName, got.MetricName)
+				assert.Equal(t, want.ResourceName, got.ResourceName)
+				assert.Equal(t, want.Namespace, got.Namespace)
+				assert.ElementsMatch(t, want.Dimensions, got.Dimensions)
+				assert.ElementsMatch(t, want.Tags, got.Tags)
+				assert.Equal(t, want.MetricMigrationParams, got.MetricMigrationParams)
+				assert.Equal(t, want.GetMetricDataProcessingParams.Statistic, got.GetMetricDataProcessingParams.Statistic)
+				assert.Equal(t, want.GetMetricDataProcessingParams.Length, got.GetMetricDataProcessingParams.Length)
+				assert.Equal(t, want.GetMetricDataProcessingParams.Period, got.GetMetricDataProcessingParams.Period)
+				assert.Equal(t, want.GetMetricDataProcessingParams.Delay, got.GetMetricDataProcessingParams.Delay)
+				assert.Nil(t, got.GetMetricDataResult)
+				assert.Nil(t, got.GetMetricStatisticsResult)
+			}
+		})
 	}
 }

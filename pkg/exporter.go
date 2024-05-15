@@ -190,6 +190,8 @@ func UpdateMetrics(
 		options.taggingAPIConcurrency,
 	)
 
+	logger.Debug("AWS Data scraped", "resource_results", len(tagsData), "metric_results", len(cloudwatchData))
+
 	metrics, observedMetricLabels, err := promutil.BuildMetrics(cloudwatchData, options.labelsSnakeCase, logger)
 	if err != nil {
 		logger.Error(err, "Error migrating cloudwatch metrics to prometheus metrics")
@@ -199,5 +201,7 @@ func UpdateMetrics(
 	metrics = promutil.EnsureLabelConsistencyAndRemoveDuplicates(metrics, observedMetricLabels)
 
 	registry.MustRegister(promutil.NewPrometheusCollector(metrics))
+
+	logger.Debug("Registered collected metrics", "metrics_registered", len(metrics))
 	return nil
 }

@@ -1,4 +1,4 @@
-package appender
+package resourcemetadata
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
 )
 
-type StaticResourceStrategy struct {
+type StaticResource struct {
 	Name string
 }
 
@@ -15,16 +15,10 @@ type ResourceName struct {
 	resource *Resource
 }
 
-func (sr StaticResourceStrategy) new(_ logging.Logger) metricResourceEnricher {
-	return &ResourceName{
-		resource: &Resource{Name: sr.Name},
-	}
-}
-
-func (sr StaticResourceStrategy) resourceTagsOnMetrics() []string {
-	return nil
+func (sr StaticResource) Create(_ logging.Logger) MetricResourceEnricher {
+	return &ResourceName{resource: &Resource{Name: sr.Name}}
 }
 
 func (rnd *ResourceName) Enrich(_ context.Context, metrics []*model.Metric) ([]*model.Metric, Resources) {
-	return metrics, Resources{staticResource: rnd.resource}
+	return metrics, Resources{StaticResource: rnd.resource}
 }

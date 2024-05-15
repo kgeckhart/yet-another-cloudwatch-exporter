@@ -3,42 +3,28 @@ package appender
 import (
 	"context"
 
-	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/logging"
+	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/job/resourcemetadata"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
 )
 
-type Resource struct {
-	// Name is an identifiable value for the resource and is variable dependent on the match made
-	//	It will be the AWS ARN (Amazon Resource Name) if a unique resource was found
-	//  It will be "global" if a unique resource was not found
-	//  CustomNamespaces will have the custom namespace Name
-	Name string
-	// Tags is a set of tags associated to the resource
-	Tags []model.Tag
-}
-
-type Resources struct {
-	staticResource      *Resource
-	associatedResources []*Resource
-}
-
-type metricResourceEnricher interface {
-	Enrich(ctx context.Context, metrics []*model.Metric) ([]*model.Metric, Resources)
-}
-
-type ResourceEnrichmentStrategy interface {
-	new(logger logging.Logger) metricResourceEnricher
-	resourceTagsOnMetrics() []string
+func New(enricher resourcemetadata.MetricResourceEnricher) *Appender {
+	return &Appender{
+		resourceEnricher: enricher,
+		mapper:           cloudwatchDataMapper{},
+		accumulator:      NewAccumulator(),
+	}
 }
 
 type Appender struct {
-	resourceEnricher metricResourceEnricher
+	resourceEnricher resourcemetadata.MetricResourceEnricher
+	mapper           cloudwatchDataMapper
 	accumulator      *Accumulator
 }
 
 func (a Appender) Append(ctx context.Context, namespace string, metricConfig *model.MetricConfig, metrics []*model.Metric) {
 	metrics, metricResources := a.resourceEnricher.Enrich(ctx, metrics)
-	a.accumulator.Append(ctx, namespace, metricConfig, metrics, metricResources)
+	cloudwatchData := a.mapper.Map(ctx, namespace, metricConfig, metrics, metricResources)
+	a.accumulator.Append(ctx, cloudwatchData)
 }
 
 func (a Appender) Done() {
@@ -47,11 +33,4 @@ func (a Appender) Done() {
 
 func (a Appender) ListAll() []*model.CloudwatchData {
 	return a.accumulator.ListAll()
-}
-
-func New(logger logging.Logger, strategy ResourceEnrichmentStrategy) *Appender {
-	return &Appender{
-		resourceEnricher: strategy.new(logger),
-		accumulator:      NewAccumulator(strategy.resourceTagsOnMetrics()),
-	}
 }
