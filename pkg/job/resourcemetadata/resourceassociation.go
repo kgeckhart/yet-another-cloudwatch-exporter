@@ -29,10 +29,10 @@ func NewResourceAssociation(dimensionRegexps []model.DimensionsRegexp, tagsOnMet
 func (ra Association) Create(logger logging.Logger) MetricResourceEnricher {
 	if len(ra.DimensionRegexps) > 0 && len(ra.Resources) > 0 {
 		maxDim := maxDimAdapter{wrapped: maxdimassociator.NewAssociator(logger, ra.DimensionRegexps, ra.Resources)}
-		return NewResourceAssociationEnricher(nil, maxDim)
+		return NewResourceAssociationEnricher(nil, maxDim, ra.TagsOnMetrics)
 	}
 
-	return NewResourceAssociationEnricher(globalResource, nil)
+	return NewResourceAssociationEnricher(globalResource, nil, nil)
 }
 
 type associator interface {
@@ -40,15 +40,17 @@ type associator interface {
 }
 
 type ResourceAssociationEnricher struct {
-	associator     associator
-	staticResource *Resource
+	associator            associator
+	staticResource        *Resource
+	resourceTagsOnMetrics []string
 }
 
 // NewResourceAssociationEnricher is an injectable function for testing purposes
-func NewResourceAssociationEnricher(staticResource *Resource, associator associator) *ResourceAssociationEnricher {
+func NewResourceAssociationEnricher(staticResource *Resource, associator associator, resourceTagsOnMetrics []string) *ResourceAssociationEnricher {
 	return &ResourceAssociationEnricher{
-		staticResource: staticResource,
-		associator:     associator,
+		staticResource:        staticResource,
+		associator:            associator,
+		resourceTagsOnMetrics: resourceTagsOnMetrics,
 	}
 }
 
@@ -64,26 +66,30 @@ func (rad *ResourceAssociationEnricher) Enrich(_ context.Context, metrics []*mod
 		if resource != nil {
 			metrics[outputI] = metric
 
-			// TODO tags on metrics should probably create a new Resource?
-			// var tags []model.Tag
-			// if len(c.resourceTagsOnMetrics) > 0 {
-			// 	tags = make([]model.Tag, 0, len(c.resourceTagsOnMetrics))
-			// 	for _, tagName := range c.resourceTagsOnMetrics {
-			// 		tag := model.Tag{
-			// 			Key: tagName,
-			// 		}
-			// 		for _, resourceTag := range resource.Tags {
-			// 			if resourceTag.Key == tagName {
-			// 				tag.Value = resourceTag.Value
-			// 				break
-			// 			}
-			// 		}
-			//
-			// 		// Always add the tag, even if it's empty, to ensure the same labels are present on all metrics for a single service
-			// 		tags = append(tags, tag)
-			// 	}
-			// }
-			associatedResources[outputI] = resource
+			var tags []model.Tag
+			if len(rad.resourceTagsOnMetrics) > 0 {
+				tags = make([]model.Tag, 0, len(rad.resourceTagsOnMetrics))
+				for _, tagName := range rad.resourceTagsOnMetrics {
+					tag := model.Tag{
+						Key: tagName,
+					}
+					for _, resourceTag := range resource.Tags {
+						if resourceTag.Key == tagName {
+							tag.Value = resourceTag.Value
+							break
+						}
+					}
+
+					// Always add the tag, even if it's empty, to ensure the same labels are present on all metrics for a single service
+					tags = append(tags, tag)
+				}
+			}
+
+			// TODO is it safe to modify the tags on the original resource pointer?
+			associatedResources[outputI] = &Resource{
+				Name: resource.Name,
+				Tags: tags,
+			}
 			outputI++
 		}
 	}

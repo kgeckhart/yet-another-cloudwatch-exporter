@@ -22,7 +22,7 @@ func NewProcessor(logger logging.Logger, client tagging.Client) *Processor {
 	}
 }
 
-func (p Processor) Run(ctx context.Context, region string, account string, job model.DiscoveryJob) (*model.TaggedResourceResult, error) {
+func (p Processor) Run(ctx context.Context, region string, job model.DiscoveryJob) ([]*model.TaggedResource, error) {
 	resources, err := p.client.GetResources(ctx, job, region)
 	if err != nil {
 		if errors.Is(err, tagging.ErrExpectedToFindResources) {
@@ -31,18 +31,5 @@ func (p Processor) Run(ctx context.Context, region string, account string, job m
 		return nil, fmt.Errorf("failed to describe resources: %w", err)
 	}
 
-	if len(resources) == 0 {
-		p.logger.Debug("No tagged resources", "region", region, "namespace", job.Type)
-	}
-
-	result := &model.TaggedResourceResult{
-		Context: &model.ScrapeContext{
-			Region:     region,
-			AccountID:  account,
-			CustomTags: job.CustomTags,
-		},
-		Data: resources,
-	}
-
-	return result, nil
+	return resources, nil
 }

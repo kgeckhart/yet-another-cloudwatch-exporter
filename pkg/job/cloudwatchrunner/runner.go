@@ -41,11 +41,11 @@ type Params struct {
 	GetMetricDataMetricsPerQuery int
 }
 
-func New(logger logging.Logger, factory clients.Factory, params Params, job Job) *Runner {
+func NewDefault(logger logging.Logger, factory clients.Factory, params Params, job Job) *Runner {
 	cloudwatchClient := factory.GetCloudwatchClient(params.Region, params.Role, params.CloudwatchConcurrency)
 	lmProcessor := listmetrics.NewDefaultProcessor(logger, cloudwatchClient)
 	gmdProcessor := getmetricdata.NewDefaultProcessor(logger, cloudwatchClient, params.GetMetricDataMetricsPerQuery, params.CloudwatchConcurrency.GetMetricData)
-	return internalNew(logger, lmProcessor, gmdProcessor, params, job)
+	return New(logger, lmProcessor, gmdProcessor, params, job)
 }
 
 type Runner struct {
@@ -56,8 +56,8 @@ type Runner struct {
 	params        Params
 }
 
-// internalNew allows an injection point for interfaces
-func internalNew(logger logging.Logger, listMetrics listMetricsProcessor, getMetricData getMetricDataProcessor, params Params, job Job) *Runner {
+// New allows an injection point for interfaces
+func New(logger logging.Logger, listMetrics listMetricsProcessor, getMetricData getMetricDataProcessor, params Params, job Job) *Runner {
 	return &Runner{
 		logger:        logger,
 		job:           job,
@@ -67,7 +67,7 @@ func internalNew(logger logging.Logger, listMetrics listMetricsProcessor, getMet
 	}
 }
 
-func (r *Runner) Run(ctx context.Context) (*model.CloudwatchMetricResult, error) {
+func (r *Runner) Run(ctx context.Context) ([]*model.CloudwatchData, error) {
 	a := appender.New(r.job.resourceEnrichment().Create(r.logger))
 
 	err := r.listMetrics.Run(ctx, r.job.listMetricsParams(), a)
@@ -85,13 +85,5 @@ func (r *Runner) Run(ctx context.Context) (*model.CloudwatchMetricResult, error)
 		return nil, fmt.Errorf("failed to get metric data: %w", err)
 	}
 
-	result := &model.CloudwatchMetricResult{
-		Context: &model.ScrapeContext{
-			Region:     r.params.Region,
-			AccountID:  r.params.AccountID,
-			CustomTags: r.job.CustomTags(),
-		},
-		Data: metrics,
-	}
-	return result, nil
+	return metrics, nil
 }
