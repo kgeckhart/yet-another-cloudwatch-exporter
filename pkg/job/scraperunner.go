@@ -14,7 +14,7 @@ import (
 )
 
 type ScrapeRunner struct {
-	factory               clients.Factory
+	clientFactory         clients.Factory
 	jobsCfg               model.JobsConfig
 	metricsPerQuery       int
 	cloudwatchConcurrency cloudwatch.ConcurrencyConfig
@@ -22,11 +22,18 @@ type ScrapeRunner struct {
 
 	roleRegionToAccount map[model.Role]map[string]string
 	logger              logging.Logger
+	runnerFactory       runnerFactory
+}
+
+type runnerFactory interface {
+	NewResourceMetadataRunner(logger logging.Logger, clientFactory clients.Factory, region string, role model.Role, concurrency int) *resourcemetadata.Runner
+	NewCloudWatchRunner(logger logging.Logger, factory clients.Factory, params cloudwatchrunner.Params, job cloudwatchrunner.Job) *cloudwatchrunner.Runner
 }
 
 func NewScrapeRunner(logger logging.Logger,
 	jobsCfg model.JobsConfig,
-	factory clients.Factory,
+	clientFactory clients.Factory,
+	runnerFactory runnerFactory,
 	metricsPerQuery int,
 	cloudwatchConcurrency cloudwatch.ConcurrencyConfig,
 	taggingAPIConcurrency int,
@@ -40,7 +47,8 @@ func NewScrapeRunner(logger logging.Logger,
 	})
 
 	return &ScrapeRunner{
-		factory:               factory,
+		clientFactory:         clientFactory,
+		runnerFactory:         runnerFactory,
 		logger:                logger,
 		jobsCfg:               jobsCfg,
 		metricsPerQuery:       metricsPerQuery,
@@ -58,7 +66,8 @@ func (sr ScrapeRunner) Run(ctx context.Context) ([]model.TaggedResourceResult, [
 		for region := range regions {
 			wg.Add(1)
 			go func(role model.Role, region string) {
-				accountID, err := sr.factory.GetAccountClient(region, role).GetAccount(ctx)
+				defer wg.Done()
+				accountID, err := sr.clientFactory.GetAccountClient(region, role).GetAccount(ctx)
 				if err != nil {
 					sr.logger.Error(err, "Failed to get Account", "region", region, "role_arn", role.RoleArn)
 				} else {
@@ -96,8 +105,7 @@ func (sr ScrapeRunner) Run(ctx context.Context) ([]model.TaggedResourceResult, [
 			var jobToRun cloudwatchrunner.Job
 			jobAction(jobLogger, job,
 				func(job model.DiscoveryJob) {
-					taggingClient := sr.factory.GetTaggingClient(region, role, sr.taggingAPIConcurrency)
-					rmProcessor := resourcemetadata.NewProcessor(jobLogger, taggingClient)
+					rmProcessor := sr.runnerFactory.NewResourceMetadataRunner(jobLogger, sr.clientFactory, region, role, sr.taggingAPIConcurrency)
 
 					jobLogger.Debug("Starting resource discovery")
 					resources, err := rmProcessor.Run(ctx, region, job)
@@ -122,7 +130,7 @@ func (sr ScrapeRunner) Run(ctx context.Context) ([]model.TaggedResourceResult, [
 					}
 					jobLogger.Debug("Resource discovery finished", "number_of_discovered_resources", len(resources))
 
-					jobToRun = cloudwatchrunner.Discovery{Job: job, Resources: resources}
+					jobToRun = cloudwatchrunner.DiscoveryJob{Job: job, Resources: resources}
 				}, func(job model.CustomNamespaceJob) {
 					jobToRun = cloudwatchrunner.CustomNamespaceJob{Job: job}
 				},
@@ -134,7 +142,7 @@ func (sr ScrapeRunner) Run(ctx context.Context) ([]model.TaggedResourceResult, [
 				CloudwatchConcurrency:        sr.cloudwatchConcurrency,
 				GetMetricDataMetricsPerQuery: sr.metricsPerQuery,
 			}
-			runner := cloudwatchrunner.NewDefault(jobLogger, sr.factory, runnerParams, jobToRun)
+			runner := sr.runnerFactory.NewCloudWatchRunner(jobLogger, sr.clientFactory, runnerParams, jobToRun)
 			metricResult, err := runner.Run(ctx)
 			if err != nil {
 				jobLogger.Error(err, "Failed to run job")
@@ -142,7 +150,8 @@ func (sr ScrapeRunner) Run(ctx context.Context) ([]model.TaggedResourceResult, [
 			}
 
 			if metricResult == nil {
-				jobLogger.Info("No metrics data found")
+				jobLogger.Debug("No metrics data found")
+				return
 			}
 
 			jobLogger.Debug("Job run finished", "number_of_metrics", len(metricResult))
@@ -161,8 +170,8 @@ func (sr ScrapeRunner) Run(ctx context.Context) ([]model.TaggedResourceResult, [
 			metricResults = append(metricResults, result)
 		}()
 	})
-	sr.logger.Debug("Finished job runs", "resource_results", len(resourceResults), "metric_results", len(metricResults))
 	wg.Wait()
+	sr.logger.Debug("Finished job runs", "resource_results", len(resourceResults), "metric_results", len(metricResults))
 	return resourceResults, metricResults
 }
 

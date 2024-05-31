@@ -26,7 +26,7 @@ func ScrapeAwsData(
 			logger.Error(nil, "Static jobs are not supported by the unified job runner at this time")
 			return nil, nil
 		}
-		runner := NewScrapeRunner(logger, jobsCfg, factory, metricsPerQuery, cloudwatchConcurrency, taggingAPIConcurrency)
+		runner := NewScrapeRunner(logger, jobsCfg, factory, RunnerFactory{}, metricsPerQuery, cloudwatchConcurrency, taggingAPIConcurrency)
 		return runner.Run(ctx)
 	}
 

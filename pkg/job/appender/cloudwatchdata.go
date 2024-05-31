@@ -7,9 +7,7 @@ import (
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
 )
 
-type cloudwatchDataMapper struct {
-	resourceTagsOnMetrics []string
-}
+type cloudwatchDataMapper struct{}
 
 func (c cloudwatchDataMapper) Map(_ context.Context, namespace string, metricConfig *model.MetricConfig, metrics []*model.Metric, resources resourcemetadata.Resources) []*model.CloudwatchData {
 	batch := make([]*model.CloudwatchData, 0, len(metrics)*len(metricConfig.Statistics))

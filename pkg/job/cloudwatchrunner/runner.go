@@ -45,7 +45,9 @@ func NewDefault(logger logging.Logger, factory clients.Factory, params Params, j
 	cloudwatchClient := factory.GetCloudwatchClient(params.Region, params.Role, params.CloudwatchConcurrency)
 	lmProcessor := listmetrics.NewDefaultProcessor(logger, cloudwatchClient)
 	gmdProcessor := getmetricdata.NewDefaultProcessor(logger, cloudwatchClient, params.GetMetricDataMetricsPerQuery, params.CloudwatchConcurrency.GetMetricData)
-	return New(logger, lmProcessor, gmdProcessor, params, job)
+	a := appender.New(job.resourceEnrichment().Create(logger))
+
+	return New(logger, lmProcessor, gmdProcessor, a, params, job)
 }
 
 type Runner struct {
@@ -54,28 +56,28 @@ type Runner struct {
 	listMetrics   listMetricsProcessor
 	getMetricData getMetricDataProcessor
 	params        Params
+	appender      *appender.Appender
 }
 
 // New allows an injection point for interfaces
-func New(logger logging.Logger, listMetrics listMetricsProcessor, getMetricData getMetricDataProcessor, params Params, job Job) *Runner {
+func New(logger logging.Logger, listMetrics listMetricsProcessor, getMetricData getMetricDataProcessor, a *appender.Appender, params Params, job Job) *Runner {
 	return &Runner{
 		logger:        logger,
 		job:           job,
 		listMetrics:   listMetrics,
 		getMetricData: getMetricData,
+		appender:      a,
 		params:        params,
 	}
 }
 
 func (r *Runner) Run(ctx context.Context) ([]*model.CloudwatchData, error) {
-	a := appender.New(r.job.resourceEnrichment().Create(r.logger))
-
-	err := r.listMetrics.Run(ctx, r.job.listMetricsParams(), a)
+	err := r.listMetrics.Run(ctx, r.job.listMetricsParams(), r.appender)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list metric data: %w", err)
 	}
 
-	getMetricDatas := a.ListAll()
+	getMetricDatas := r.appender.ListAll()
 	if len(getMetricDatas) == 0 {
 		return nil, nil
 	}

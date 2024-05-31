@@ -6,20 +6,20 @@ import (
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
 )
 
-type Discovery struct {
+type DiscoveryJob struct {
 	Job       model.DiscoveryJob
 	Resources []*model.TaggedResource
 }
 
-func (d Discovery) Namespace() string {
+func (d DiscoveryJob) Namespace() string {
 	return d.Job.Type
 }
 
-func (d Discovery) CustomTags() []model.Tag {
+func (d DiscoveryJob) CustomTags() []model.Tag {
 	return d.Job.CustomTags
 }
 
-func (d Discovery) listMetricsParams() listmetrics.ProcessingParams {
+func (d DiscoveryJob) listMetricsParams() listmetrics.ProcessingParams {
 	return listmetrics.ProcessingParams{
 		Namespace:                 d.Job.Type,
 		Metrics:                   d.Job.Metrics,
@@ -28,6 +28,6 @@ func (d Discovery) listMetricsParams() listmetrics.ProcessingParams {
 	}
 }
 
-func (d Discovery) resourceEnrichment() ResourceEnrichment {
+func (d DiscoveryJob) resourceEnrichment() ResourceEnrichment {
 	return resourcemetadata.NewResourceAssociation(d.Job.DimensionsRegexps, d.Job.ExportedTagsOnMetrics, nil)
 }
