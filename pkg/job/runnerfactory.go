@@ -2,18 +2,35 @@ package job
 
 import (
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/clients"
+	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/clients/account"
+	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/clients/cloudwatch"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/job/cloudwatchrunner"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/job/resourcemetadata"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/logging"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
 )
 
-type RunnerFactory struct{}
-
-func (r RunnerFactory) NewResourceMetadataRunner(logger logging.Logger, clientFactory clients.Factory, region string, role model.Role, concurrency int) *resourcemetadata.Runner {
-	return resourcemetadata.NewDefaultRunner(logger, clientFactory, region, role, concurrency)
+type RunnerFactory struct {
+	clientFactory                clients.Factory
+	resourceMetadataConcurrency  int
+	cloudwatchConcurrency        cloudwatch.ConcurrencyConfig
+	getMetricDataMetricsPerQuery int
 }
 
-func (r RunnerFactory) NewCloudWatchRunner(logger logging.Logger, factory clients.Factory, params cloudwatchrunner.Params, job cloudwatchrunner.Job) *cloudwatchrunner.Runner {
-	return cloudwatchrunner.NewDefault(logger, factory, params, job)
+func (r *RunnerFactory) GetAccountClient(region string, role model.Role) account.Client {
+	return r.clientFactory.GetAccountClient(region, role)
+}
+
+func (r *RunnerFactory) NewResourceMetadataRunner(logger logging.Logger, region string, role model.Role) *resourcemetadata.Runner {
+	return resourcemetadata.NewDefaultRunner(logger, r.clientFactory, region, role, r.resourceMetadataConcurrency)
+}
+
+func (r *RunnerFactory) NewCloudWatchRunner(logger logging.Logger, region string, role model.Role, job cloudwatchrunner.Job) *cloudwatchrunner.Runner {
+	params := cloudwatchrunner.Params{
+		Region:                       region,
+		Role:                         role,
+		CloudwatchConcurrency:        r.cloudwatchConcurrency,
+		GetMetricDataMetricsPerQuery: r.getMetricDataMetricsPerQuery,
+	}
+	return cloudwatchrunner.NewDefault(logger, r.clientFactory, params, job)
 }

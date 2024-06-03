@@ -36,7 +36,6 @@ type listMetricsProcessor interface {
 type Params struct {
 	Region                       string
 	Role                         model.Role
-	AccountID                    string
 	CloudwatchConcurrency        cloudwatch.ConcurrencyConfig
 	GetMetricDataMetricsPerQuery int
 }

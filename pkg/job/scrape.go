@@ -21,13 +21,19 @@ func ScrapeAwsData(
 	cloudwatchConcurrency cloudwatch.ConcurrencyConfig,
 	taggingAPIConcurrency int,
 ) ([]model.TaggedResourceResult, []model.CloudwatchMetricResult) {
-	if config.FlagsFromCtx(ctx).IsFeatureEnabled(config.UnifiedJobRunner) {
+	if config.FlagsFromCtx(ctx).IsFeatureEnabled(config.UnifiedScraper) {
 		if len(jobsCfg.StaticJobs) > 0 {
-			logger.Error(nil, "Static jobs are not supported by the unified job runner at this time")
+			logger.Error(nil, "Static jobs are not supported by the unified scraper at this time")
 			return nil, nil
 		}
-		runner := NewScrapeRunner(logger, jobsCfg, factory, RunnerFactory{}, metricsPerQuery, cloudwatchConcurrency, taggingAPIConcurrency)
-		return runner.Run(ctx)
+		rf := &RunnerFactory{
+			clientFactory:                factory,
+			resourceMetadataConcurrency:  taggingAPIConcurrency,
+			cloudwatchConcurrency:        cloudwatchConcurrency,
+			getMetricDataMetricsPerQuery: metricsPerQuery,
+		}
+		scraper := NewScraper(logger, jobsCfg, rf)
+		return scraper.Scrape(ctx)
 	}
 
 	mux := &sync.Mutex{}

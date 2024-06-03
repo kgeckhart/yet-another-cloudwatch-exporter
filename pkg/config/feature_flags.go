@@ -13,7 +13,7 @@ const AwsSdkV2 = "aws-sdk-v2"
 // AlwaysReturnInfoMetrics is a feature flag used to enable the return of info metrics even when there are no corresponding CloudWatch metrics
 const AlwaysReturnInfoMetrics = "always-return-info-metrics"
 
-const UnifiedJobRunner = "unified-job-runner"
+const UnifiedScraper = "unified-scraper"
 
 // FeatureFlags is an interface all objects that can tell wether or not a feature flag is enabled can implement.
 type FeatureFlags interface {
