@@ -21,11 +21,11 @@ func (r *RunnerFactory) GetAccountClient(region string, role model.Role) account
 	return r.clientFactory.GetAccountClient(region, role)
 }
 
-func (r *RunnerFactory) NewResourceMetadataRunner(logger logging.Logger, region string, role model.Role) *resourcemetadata.Runner {
+func (r *RunnerFactory) NewResourceMetadataRunner(logger logging.Logger, region string, role model.Role) ResourceMetadataRunner {
 	return resourcemetadata.NewDefaultRunner(logger, r.clientFactory, region, role, r.resourceMetadataConcurrency)
 }
 
-func (r *RunnerFactory) NewCloudWatchRunner(logger logging.Logger, region string, role model.Role, job cloudwatchrunner.Job) *cloudwatchrunner.Runner {
+func (r *RunnerFactory) NewCloudWatchRunner(logger logging.Logger, region string, role model.Role, job cloudwatchrunner.Job) CloudwatchRunner {
 	params := cloudwatchrunner.Params{
 		Region:                       region,
 		Role:                         role,

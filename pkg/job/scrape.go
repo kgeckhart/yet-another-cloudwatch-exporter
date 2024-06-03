@@ -33,7 +33,14 @@ func ScrapeAwsData(
 			getMetricDataMetricsPerQuery: metricsPerQuery,
 		}
 		scraper := NewScraper(logger, jobsCfg, rf)
-		return scraper.Scrape(ctx)
+		resources, metrics, errors := scraper.Scrape(ctx)
+		if len(errors) > 0 {
+			for _, err := range errors {
+				logger.Error(err.Err, "Encountered error while scraping for job", err.ToLoggerKeyVals()...)
+			}
+			return nil, nil
+		}
+		return resources, metrics
 	}
 
 	mux := &sync.Mutex{}

@@ -7,7 +7,6 @@ import (
 
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/clients/account"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/job/cloudwatchrunner"
-	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/job/resourcemetadata"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/logging"
 	"github.com/nerdswords/yet-another-cloudwatch-exporter/pkg/model"
 )
@@ -21,8 +20,16 @@ type Scraper struct {
 
 type runnerFactory interface {
 	GetAccountClient(region string, role model.Role) account.Client
-	NewResourceMetadataRunner(logger logging.Logger, region string, role model.Role) *resourcemetadata.Runner
-	NewCloudWatchRunner(logger logging.Logger, region string, role model.Role, job cloudwatchrunner.Job) *cloudwatchrunner.Runner
+	NewResourceMetadataRunner(logger logging.Logger, region string, role model.Role) ResourceMetadataRunner
+	NewCloudWatchRunner(logger logging.Logger, region string, role model.Role, job cloudwatchrunner.Job) CloudwatchRunner
+}
+
+type ResourceMetadataRunner interface {
+	Run(ctx context.Context, region string, job model.DiscoveryJob) ([]*model.TaggedResource, error)
+}
+
+type CloudwatchRunner interface {
+	Run(ctx context.Context) ([]*model.CloudwatchData, error)
 }
 
 func NewScraper(logger logging.Logger,
@@ -34,7 +41,7 @@ func NewScraper(logger logging.Logger,
 		if _, exists := roleRegionToAccount[role]; !exists {
 			roleRegionToAccount[role] = map[string]string{}
 		}
-		roleRegionToAccount[role] = map[string]string{region: ""}
+		roleRegionToAccount[role][region] = ""
 	})
 
 	return &Scraper{
@@ -45,7 +52,7 @@ func NewScraper(logger logging.Logger,
 	}
 }
 
-func (s Scraper) Scrape(ctx context.Context) ([]model.TaggedResourceResult, []model.CloudwatchMetricResult) {
+func (s Scraper) Scrape(ctx context.Context) ([]model.TaggedResourceResult, []model.CloudwatchMetricResult, []Error) {
 	var wg sync.WaitGroup
 	mux := &sync.Mutex{}
 	s.logger.Debug("Starting account initialization")
@@ -66,6 +73,7 @@ func (s Scraper) Scrape(ctx context.Context) ([]model.TaggedResourceResult, []mo
 	wg.Wait()
 	s.logger.Debug("Finished account initialization")
 
+	jobErrors := make([]Error, 0)
 	metricResults := make([]model.CloudwatchMetricResult, 0)
 	resourceResults := make([]model.TaggedResourceResult, 0)
 	s.logger.Debug("Starting job runs")
@@ -84,7 +92,16 @@ func (s Scraper) Scrape(ctx context.Context) ([]model.TaggedResourceResult, []mo
 
 			accountID := s.roleRegionToAccount[role][region]
 			if accountID == "" {
-				jobLogger.Error(nil, "Account for job was not found see previous errors")
+				jobError := Error{
+					AccountID: "",
+					Region:    region,
+					RoleARN:   role.RoleArn,
+					Namespace: namespace,
+					Message:   "Account for job was not found see previous errors",
+				}
+				mux.Lock()
+				jobErrors = append(jobErrors, jobError)
+				mux.Unlock()
 				return
 			}
 			jobLogger = jobLogger.With("account", accountID)
@@ -96,7 +113,18 @@ func (s Scraper) Scrape(ctx context.Context) ([]model.TaggedResourceResult, []mo
 					rmRunner := s.runnerFactory.NewResourceMetadataRunner(jobLogger, region, role)
 					resources, err := rmRunner.Run(ctx, region, job)
 					if err != nil {
-						jobLogger.Error(err, "Resource metadata processor failed")
+						jobError := Error{
+							AccountID: accountID,
+							Region:    region,
+							RoleARN:   role.RoleArn,
+							Namespace: namespace,
+							Message:   "Failed to run resource metadata for job",
+							Err:       err,
+						}
+						mux.Lock()
+						jobErrors = append(jobErrors, jobError)
+						mux.Unlock()
+
 						return
 					}
 					if len(resources) > 0 {
@@ -121,11 +149,26 @@ func (s Scraper) Scrape(ctx context.Context) ([]model.TaggedResourceResult, []mo
 					jobToRun = cloudwatchrunner.CustomNamespaceJob{Job: job}
 				},
 			)
+			if jobToRun == nil {
+				jobLogger.Debug("Ending job run early due to job error see job errors")
+				return
+			}
 			jobLogger.Debug("Starting cloudwatch metrics runner")
 			cwRunner := s.runnerFactory.NewCloudWatchRunner(jobLogger, region, role, jobToRun)
 			metricResult, err := cwRunner.Run(ctx)
 			if err != nil {
-				jobLogger.Error(err, "Failed to run job")
+				jobError := Error{
+					AccountID: accountID,
+					Region:    region,
+					RoleARN:   role.RoleArn,
+					Namespace: namespace,
+					Message:   "Failed to gather cloudwatch metrics for job",
+					Err:       err,
+				}
+				mux.Lock()
+				jobErrors = append(jobErrors, jobError)
+				mux.Unlock()
+
 				return
 			}
 
@@ -152,7 +195,7 @@ func (s Scraper) Scrape(ctx context.Context) ([]model.TaggedResourceResult, []mo
 	})
 	wg.Wait()
 	s.logger.Debug("Finished job runs", "resource_results", len(resourceResults), "metric_results", len(metricResults))
-	return resourceResults, metricResults
+	return resourceResults, metricResults, jobErrors
 }
 
 // Walk through each custom namespace and discovery jobs and take an action
@@ -185,5 +228,23 @@ func jobAction(logger logging.Logger, job any, discovery func(job model.Discover
 	default:
 		logger.Error(fmt.Errorf("config type of %T is not supported", typedJob), "Unexpected job type")
 		return
+	}
+}
+
+type Error struct {
+	AccountID string
+	Namespace string
+	Region    string
+	RoleARN   string
+	Message   string
+	Err       error
+}
+
+func (e Error) ToLoggerKeyVals() []interface{} {
+	return []interface{}{
+		"account_id", e.AccountID,
+		"namespace", e.Namespace,
+		"region", e.Region,
+		"role_arn", e.RoleARN,
 	}
 }
