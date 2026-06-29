@@ -18,7 +18,6 @@ import (
 	"log/slog"
 
 	"github.com/prometheus/client_golang/prometheus"
-	prom "github.com/prometheus/common/model"
 
 	"github.com/prometheus-community/yet-another-cloudwatch-exporter/pkg/clients"
 	"github.com/prometheus-community/yet-another-cloudwatch-exporter/pkg/clients/cloudwatch"
@@ -183,9 +182,6 @@ func UpdateMetrics(
 	factory clients.Factory,
 	optFuncs ...OptionsFunc,
 ) error {
-	// Use legacy validation as that's the behaviour of former releases.
-	prom.NameValidationScheme = prom.LegacyValidation //nolint:staticcheck
-
 	options := defaultOptions()
 	for _, f := range optFuncs {
 		if err := f(&options); err != nil {
